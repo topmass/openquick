@@ -143,6 +143,13 @@ node_modules) → templates copied in. wrangler is a pinned regular dependency, 
 - Defaults: hub on, sites public, deploys token-gated.
 - `oquick setup --no-hub` → HUB_DISABLED=1 var; root serves a JSON hint, sites unaffected.
   `--hub` re-enables. Re-running setup is always safe/idempotent.
+- **Playground mode** (`oquick token open` / `setup --open-deploys`): OPEN_DEPLOYS=1 →
+  `/__platform/deploy/*` routes skip the token check; delete keeps it. Tokenless deployers are
+  guarded in the deploy/start branch: per-IP daily cap (`deploy_ip`, default 50, counted in the
+  registry DO) + platform site ceiling for NEW names (`max_sites`, default 500). Org-mode users
+  bypass the guards (they passed the Access gate). `oquick token require` restores the default.
+  health reports `openDeploys`. Verified live: tokenless 3-step deploy succeeded, tokenless
+  delete 401'd, gate restore re-blocked tokenless deploys.
 - **Org mode** (`oquick auth enable --team <t> --aud <a>`, or `setup --private` once
   configured): REQUIRE_ACCESS=1 → `accessGate()` in index.ts requires a valid
   `Cf-Access-Jwt-Assertion` on EVERY request (sites, APIs, WS, hub) – 403 HTML page for
