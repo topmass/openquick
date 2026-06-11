@@ -1,7 +1,7 @@
 // Builds the CLI into a single executable and bundles the platform worker
 // source + site templates into the npm package.
 import { build } from 'esbuild';
-import { chmodSync, cpSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -49,5 +49,14 @@ await build({
 // 4. Bundle the site templates.
 rmSync(join(pkgDir, 'templates'), { recursive: true, force: true });
 cpSync(join(repoRoot, 'templates'), join(pkgDir, 'templates'), { recursive: true });
+
+// 5. Ship the repo README on the npm page (with an absolute banner URL).
+writeFileSync(
+  join(pkgDir, 'README.md'),
+  readFileSync(join(repoRoot, 'README.md'), 'utf8').replace(
+    '.github/banner.png',
+    'https://raw.githubusercontent.com/topmass/openquick/main/.github/banner.png',
+  ),
+);
 
 console.log('cli build complete');

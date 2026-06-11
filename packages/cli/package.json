@@ -22,6 +22,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "prepublishOnly": "node scripts/build.mjs",
     "test": "tsc"
   },
   "keywords": [

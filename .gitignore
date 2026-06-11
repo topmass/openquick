@@ -6,3 +6,4 @@ dist/
 packages/platform/src/generated/
 packages/cli/platform/
 packages/cli/templates/
+packages/cli/README.md
