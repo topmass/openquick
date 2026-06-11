@@ -69,6 +69,19 @@ const MIME: Record<string, string> = {
   pdf: 'application/pdf',
   wasm: 'application/wasm',
   map: 'application/json',
+  // Source/config files serve as plain text so they render in the browser
+  // (nothing executes server-side – OpenQuick sites are static + quick.js).
+  py: 'text/plain;charset=utf-8',
+  rb: 'text/plain;charset=utf-8',
+  sh: 'text/plain;charset=utf-8',
+  ts: 'text/plain;charset=utf-8',
+  tsx: 'text/plain;charset=utf-8',
+  jsx: 'text/plain;charset=utf-8',
+  yaml: 'text/plain;charset=utf-8',
+  yml: 'text/plain;charset=utf-8',
+  toml: 'text/plain;charset=utf-8',
+  ini: 'text/plain;charset=utf-8',
+  csv: 'text/csv;charset=utf-8',
 };
 
 export function contentType(path: string): string {

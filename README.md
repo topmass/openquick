@@ -97,15 +97,34 @@ with its Durable Object.
 ## Commands
 
 ```
+oquick                                  web UI: drag & drop a folder, get a URL
+oquick .                                deploy the current folder (any dir path works)
 oquick setup                            provision/upgrade the platform worker
 oquick init [name]                      scaffold a site + agent docs
 oquick deploy [dir] [--name x]          deploy a folder (diff upload) → URL
 oquick list                             all sites with size + last deploy
 oquick open <site>                      open in browser
 oquick delete <site> [-y]               delete a site and all its data
+oquick ui [--port 4500]                 the web UI (same as bare oquick)
 oquick dev [dir] [--port 4400]          local server against the real deployed API
 oquick domain add|list|remove           custom domains
 ```
+
+The web UI runs locally (`127.0.0.1` only) and proxies deploys through your machine, so the
+deploy token never reaches the browser or leaves your computer.
+
+## What can you deploy?
+
+Anything static – a file is just bytes served back with the right content type. HTML, CSS, JS,
+images (png/jpg/webp/avif/svg/gif), video and audio (mp4/webm/mp3 – big files get Range support,
+so seeking works), fonts, JSON, WASM, PDFs. Unknown extensions download as files; source files
+like `.py` serve as readable plain text.
+
+What does **not** work: anything that needs a server to execute. A Python script, PHP file, or
+Express app will upload and be *served*, but nothing runs it – there is no server runtime by
+design. The backend is exclusively the `quick.js` APIs (db, realtime, files, AI, channels).
+Client-side code is the loophole: JS and WASM run in the browser, so even Python works if you
+load it with [Pyodide](https://pyodide.org).
 
 ## Security model (read this)
 
