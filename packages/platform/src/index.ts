@@ -32,6 +32,8 @@ export default {
     const target = resolveTarget(request.headers.get('host') ?? url.host, url.pathname, cfg);
 
     try {
+      const denied = await accessGate(request, env, cfg);
+      if (denied) return denied;
       switch (target.kind) {
         case 'platform':
           return await handlePlatform(request, env, target.path, url);
@@ -65,19 +67,28 @@ function forward(request: Request, doPath: string, extraHeaders: Record<string, 
 
 async function handlePlatform(request: Request, env: Env, path: string, url: URL): Promise<Response> {
   if (path === '/' && request.method === 'GET') {
+    if (env.HUB_DISABLED === '1') {
+      return json({ ok: true, hub: false, hint: 'this OpenQuick serves sites only – deploy with the oquick CLI' });
+    }
     return new Response(landingPage(), {
       headers: { 'content-type': 'text/html;charset=utf-8', 'cache-control': 'no-cache' },
     });
   }
   if (path === '/__platform/health') {
-    return json({ ok: true, version: VERSION, tokenConfigured: !!env.DEPLOY_TOKEN });
+    return json({
+      ok: true,
+      version: VERSION,
+      tokenConfigured: !!env.DEPLOY_TOKEN,
+      access: env.REQUIRE_ACCESS === '1',
+      email: env.REQUIRE_ACCESS === '1' ? (await verifyAccessJwt(request, env))?.email ?? null : null,
+    });
   }
   if (path === '/__platform/list' && request.method === 'GET') {
     const res = await siteStub(env, REGISTRY).fetch('https://do/registry/list');
     return new Response(res.body, { status: res.status, headers: { 'content-type': 'application/json' } });
   }
 
-  const denied = checkToken(request, env);
+  const denied = await checkToken(request, env);
   if (denied) return denied;
 
   if (path === '/__platform/deploy/start' && request.method === 'POST') {
@@ -159,12 +170,46 @@ async function handlePlatform(request: Request, env: Env, path: string, url: URL
   return err(404, 'unknown platform route');
 }
 
-function checkToken(request: Request, env: Env): Response | null {
+async function checkToken(request: Request, env: Env): Promise<Response | null> {
   if (!env.DEPLOY_TOKEN) return err(503, 'DEPLOY_TOKEN secret is not configured on the worker');
+  if (hasValidToken(request, env)) return null;
+  // Org mode: an Access-authenticated user is a trusted deployer – no token needed.
+  if (env.REQUIRE_ACCESS === '1' && (await verifyAccessJwt(request, env))) return null;
+  return err(401, 'invalid deploy token');
+}
+
+function hasValidToken(request: Request, env: Env): boolean {
+  if (!env.DEPLOY_TOKEN) return false;
   const auth = request.headers.get('authorization') ?? '';
   const given = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (!timingSafeEqual(given, env.DEPLOY_TOKEN)) return err(401, 'invalid deploy token');
-  return null;
+  return timingSafeEqual(given, env.DEPLOY_TOKEN);
+}
+
+/**
+ * Org mode (REQUIRE_ACCESS=1): every request must carry a Cloudflare Access JWT
+ * – sites, APIs, websockets and the hub alike, exactly like Quick behind IAP.
+ * CLI deploys keep working anywhere via the bearer token.
+ */
+async function accessGate(
+  request: Request,
+  env: Env,
+  cfg: ReturnType<typeof parseHostConfig>,
+): Promise<Response | null> {
+  if (env.REQUIRE_ACCESS !== '1') return null;
+  if (hasValidToken(request, env)) return null;
+  if (await verifyAccessJwt(request, env)) return null;
+  const home = cfg.pathHosts[0] ? `https://${cfg.pathHosts[0]}/` : null;
+  if ((request.headers.get('accept') ?? '').includes('text/html')) {
+    return new Response(
+      `<!doctype html><meta charset="utf-8"><title>Protected</title>
+<body style="font-family:system-ui;max-width:30rem;margin:20vh auto;text-align:center">
+<h1>🔒</h1><p>This OpenQuick is protected by Cloudflare Access.</p>
+${home ? `<p>Sign in at <a href="${home}">${home}</a></p>` : '<p>Visit it through its protected domain to sign in.</p>'}
+</body>`,
+      { status: 403, headers: { 'content-type': 'text/html;charset=utf-8' } },
+    );
+  }
+  return err(403, 'protected by Cloudflare Access – authenticate through the protected domain');
 }
 
 function timingSafeEqual(a: string, b: string): boolean {
@@ -548,10 +593,11 @@ async function handleAiImage(request: Request, env: Env, site: string, cors: Rec
 
 const jwksCache = new Map<string, ReturnType<typeof import('jose').createRemoteJWKSet>>();
 
-async function identity(request: Request, env: Env): Promise<{ email?: string }> {
-  if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) return {};
+/** Validate the Cloudflare Access JWT, if present and Access is configured. */
+async function verifyAccessJwt(request: Request, env: Env): Promise<{ email?: string } | null> {
+  if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) return null;
   const token = request.headers.get('cf-access-jwt-assertion');
-  if (!token) return {};
+  if (!token) return null;
   try {
     const { createRemoteJWKSet, jwtVerify } = await import('jose');
     let jwks = jwksCache.get(env.ACCESS_TEAM_DOMAIN);
@@ -564,6 +610,10 @@ async function identity(request: Request, env: Env): Promise<{ email?: string }>
     const { payload } = await jwtVerify(token, jwks, { audience: env.ACCESS_AUD });
     return { email: typeof payload.email === 'string' ? payload.email : undefined };
   } catch {
-    return {};
+    return null;
   }
+}
+
+async function identity(request: Request, env: Env): Promise<{ email?: string }> {
+  return (await verifyAccessJwt(request, env)) ?? {};
 }

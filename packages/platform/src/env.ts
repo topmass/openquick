@@ -16,6 +16,10 @@ export interface Env {
   SITE_QUOTA_BYTES?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
+  /** "1" disables the hub page at the platform root (sites still serve). */
+  HUB_DISABLED?: string;
+  /** "1" requires a valid Cloudflare Access JWT on EVERY request (org mode). */
+  REQUIRE_ACCESS?: string;
 }
 
 // Sites pass an alias ('fast' | 'best') or any full @cf/ id per call; aliases

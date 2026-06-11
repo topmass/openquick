@@ -138,10 +138,28 @@ node_modules) → templates copied in. wrangler is a pinned regular dependency, 
    entry, curl a second entry in, watch it appear without reload (proves WS fan-out).
 5. `oquick` (global pnpm link from packages/cli) for hub/CLI smoke tests.
 
+## Install modes (setup flags + auth command)
+
+- Defaults: hub on, sites public, deploys token-gated.
+- `oquick setup --no-hub` → HUB_DISABLED=1 var; root serves a JSON hint, sites unaffected.
+  `--hub` re-enables. Re-running setup is always safe/idempotent.
+- **Org mode** (`oquick auth enable --team <t> --aud <a>`, or `setup --private` once
+  configured): REQUIRE_ACCESS=1 → `accessGate()` in index.ts requires a valid
+  `Cf-Access-Jwt-Assertion` on EVERY request (sites, APIs, WS, hub) – 403 HTML page for
+  browsers, JSON otherwise. Bearer-token requests bypass the gate, so the CLI keeps working
+  against workers.dev. `checkToken()` also accepts a valid Access JWT, so org members deploy
+  from the hub with NO token (the hub hides the unlock card when health reports access:true
+  and shows the signed-in email). `oquick auth disable` reopens; `oquick auth` shows status.
+  Prereqs (guided by `oquick auth enable` with no flags): a custom domain (Access can't cover
+  workers.dev) + a self-hosted Access app in the Zero Trust dash (free ≤50 users); the team
+  domain + AUD tag are the only inputs. setup()'s health check and `oquick list` send the
+  bearer token so they work in org mode.
+- Gate verified live with dummy creds: 403 everywhere unauthenticated, token bypass works,
+  enable/disable round-trip clean. Note: brief 500s right after a redeploy are propagation –
+  wait a few seconds before judging.
+
 ## Roadmap / explicitly out of scope
 
-Next up (user-requested): **org mode** – Cloudflare Access in front of a custom domain; worker
-accepts the Access JWT for deploys (no token), identity returns verified emails (jose validation
-already scaffolded in `identity()`, needs ACCESS_TEAM_DOMAIN + ACCESS_AUD vars).
 Out of scope by philosophy (Quick's "say no"): custom backends, cron, permissions/site owners,
-build pipelines, BigQuery analog.
+build pipelines, BigQuery analog. Possible future: publish to npm + GitHub, Access app
+auto-creation via API token (wrangler OAuth lacks Access scopes).

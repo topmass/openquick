@@ -11,7 +11,9 @@ interface SiteRow {
 
 export async function list() {
   const config = requireConfig();
-  const res = await fetch(`${config.platformUrl}/__platform/list`);
+  const res = await fetch(`${config.platformUrl}/__platform/list`, {
+    headers: { authorization: `Bearer ${config.token}` },
+  });
   if (!res.ok) fail(`could not list sites (HTTP ${res.status})`);
   const { sites } = (await res.json()) as { sites: SiteRow[] };
   if (!sites.length) {

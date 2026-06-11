@@ -7,12 +7,13 @@ import { domain } from './domain';
 import { dev } from './dev';
 import { token, ui } from './ui';
 import { models } from './models-cmd';
+import { auth } from './auth-cmd';
 import { loadConfig } from './config';
 import { bold, dim, fail } from './util';
 
 declare const VERSION: string;
 
-const BOOL_FLAGS = new Set(['yes', 'wildcard', 'help', 'version', 'no-open']);
+const BOOL_FLAGS = new Set(['yes', 'wildcard', 'help', 'version', 'no-open', 'no-hub', 'hub', 'private', 'public']);
 
 function parseArgs(argv: string[]): { positionals: string[]; flags: Record<string, string | boolean> } {
   const positionals: string[] = [];
@@ -36,7 +37,7 @@ ${bold('usage')}
   oquick                            open your hub (drag & drop deploys in the browser)
   oquick .                          deploy the current folder (any dir path works)
   oquick setup                      provision the platform (needs wrangler login)
-         [--chat-model <@cf/…>] [--image-model <@cf/…>] [--limits '<json>']
+         [--no-hub] [--private] [--chat-model <@cf/…>] [--limits '<json>']
   oquick init [name]                scaffold a site + agent docs
   oquick deploy [dir] [--name x]    deploy a folder → URL
   oquick list                       list all sites
@@ -44,6 +45,7 @@ ${bold('usage')}
   oquick delete <site> [-y]         delete a site and its data
   oquick token                      print the deploy token (for teammates using the hub)
   oquick models [chat|image <n>]    list AI models / set the quick-wide default
+  oquick auth [enable|disable]      org mode: require Cloudflare Access logins everywhere
   oquick dev [dir] [--port 4400]    local server against the real deployed API
   oquick domain add <host> [--wildcard] [--zone z]
                                     serve sites from your own domain
@@ -93,6 +95,8 @@ async function main() {
       return token();
     case 'models':
       return models(rest);
+    case 'auth':
+      return auth(rest, flags);
     case 'dev':
       return dev(rest[0], flags);
     case 'domain':

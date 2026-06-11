@@ -4,6 +4,8 @@
 
 OpenQuick is an open-source, self-hosted take on [Quick](https://shopify.engineering/quick), Shopify's internal hosting platform that changed how their teams build and share ("demos over memos"). Shopify runs Quick on a single $200/month VM behind their IAP. OpenQuick gives you the same experience on Cloudflare Workers for $0.
 
+## Get started (2 minutes)
+
 ```sh
 pnpm add -g openquick      # or: npm i -g openquick
 oquick setup               # one-time: deploys the platform to YOUR Cloudflare account
@@ -12,7 +14,27 @@ cd lunch-poll
 oquick deploy              # → https://openquick.<you>.workers.dev/lunch-poll/
 ```
 
-The only requirement is a Cloudflare account. `oquick setup` uses wrangler (bundled) – if you're not logged in it opens the browser login for you.
+That's the whole thing. The only requirement is a Cloudflare account – `oquick setup` uses
+wrangler (bundled) and opens the browser login if needed. The defaults give you:
+
+- the **hub** at your platform URL – drag & drop deploys from the browser, site directory
+- public sites (anyone with a URL can view), **token-gated deploys** (only you can publish)
+- AI, database, realtime and file APIs on every site, rate-limited inside the free tier
+
+Tune the install with flags, at setup time or any time later (re-running is safe):
+
+```sh
+oquick setup --no-hub        # no hub page – sites only ("--hub" brings it back)
+oquick setup --private       # org mode: require Cloudflare Access logins for EVERYTHING
+                             # (guided one-time setup: oquick auth enable)
+oquick models                # pick different default AI models from a list
+oquick domain add quick.you.com   # pretty URLs on your own domain
+```
+
+**Org mode** (`oquick auth enable`) is the full Shopify-Quick experience: everything behind a
+login (free ≤50 users via Cloudflare Zero Trust), teammates deploy from the hub with no token,
+and `quick.id()` returns verified emails. Needs a custom domain; `oquick auth enable` walks
+you through the two dashboard steps. `oquick auth disable` reopens the platform.
 
 ## What every site gets
 

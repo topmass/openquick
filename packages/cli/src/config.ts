@@ -22,6 +22,12 @@ export interface Config {
   imageModel?: string | null;
   /** Optional rate-limit overrides, written as the LIMITS var (merged over defaults). */
   limits?: Record<string, number> | null;
+  /** Serve the hub page at the platform root (default true). */
+  hub?: boolean;
+  /** Cloudflare Access org mode: team domain + app AUD, and whether to require it everywhere. */
+  accessTeam?: string | null;
+  accessAud?: string | null;
+  requireAccess?: boolean;
 }
 
 export const configDir = join(
@@ -77,6 +83,10 @@ export function wranglerConfig(config: Config) {
       ...(config.limits && Object.keys(config.limits).length
         ? { LIMITS: JSON.stringify(config.limits) }
         : {}),
+      ...(config.hub === false ? { HUB_DISABLED: '1' } : {}),
+      ...(config.accessTeam ? { ACCESS_TEAM_DOMAIN: config.accessTeam } : {}),
+      ...(config.accessAud ? { ACCESS_AUD: config.accessAud } : {}),
+      ...(config.requireAccess ? { REQUIRE_ACCESS: '1' } : {}),
     },
     ...(r2Bucket ? { r2_buckets: [{ binding: 'FILES', bucket_name: r2Bucket }] } : {}),
     ...(routes.length ? { routes } : {}),

@@ -117,7 +117,14 @@ export async function setup(flags: Record<string, string | boolean>) {
     chatModel: typeof flags['chat-model'] === 'string' ? flags['chat-model'] : existing?.chatModel ?? null,
     imageModel: typeof flags['image-model'] === 'string' ? flags['image-model'] : existing?.imageModel ?? null,
     limits,
+    hub: flags['no-hub'] ? false : flags.hub ? true : existing?.hub ?? true,
+    accessTeam: typeof flags['access-team'] === 'string' ? flags['access-team'] : existing?.accessTeam ?? null,
+    accessAud: typeof flags['access-aud'] === 'string' ? flags['access-aud'] : existing?.accessAud ?? null,
+    requireAccess: flags.private ? true : flags.public ? false : existing?.requireAccess ?? false,
   };
+  if (config.requireAccess && (!config.accessTeam || !config.accessAud)) {
+    fail(`--private needs Cloudflare Access configured – run ${bold('oquick auth enable')} for the guided steps`);
+  }
 
   config.r2Bucket = config.r2Bucket ?? (await ensureBucket(workerName, accountId));
   config.platformUrl = await deployPlatform(config);
@@ -134,7 +141,9 @@ export async function setup(flags: Record<string, string | boolean>) {
   let health: { ok?: boolean } | null = null;
   for (let attempt = 0; attempt < 10 && !health?.ok; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
-    health = await fetch(`${config.platformUrl}/__platform/health`)
+    health = await fetch(`${config.platformUrl}/__platform/health`, {
+      headers: { authorization: `Bearer ${config.token}` },
+    })
       .then((r) => r.json() as Promise<{ ok?: boolean }>)
       .catch(() => null);
   }

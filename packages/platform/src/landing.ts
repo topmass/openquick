@@ -165,6 +165,16 @@ export function landingPage(): string {
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = 'oq:token';
 let pending = [];
+let accessMode = false;
+
+// In org mode (Cloudflare Access) your login is the auth – no token needed.
+fetch('/__platform/health').then(r => r.json()).then(h => {
+  accessMode = !!h.access;
+  if (accessMode && h.email) {
+    const tag = document.querySelector('.tag');
+    tag.textContent = '🔒 ' + h.email + ' · ' + tag.textContent;
+  }
+}).catch(() => {});
 
 // CLI handoff: oquick opens the hub as /#token=…
 if (location.hash.startsWith('#token=')) {
@@ -188,7 +198,7 @@ async function api(path, init = {}, raw = false) {
   const headers = { authorization: 'Bearer ' + (token() || ''), ...(raw ? {} : { 'content-type': 'application/json' }) };
   const res = await fetch(path, { ...init, headers });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) { $('tokenCard').style.display = 'block'; throw new Error('deploy token missing or wrong – unlock below 👇'); }
+  if (res.status === 401 && !accessMode) { $('tokenCard').style.display = 'block'; throw new Error('deploy token missing or wrong – unlock below 👇'); }
   if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
   return data;
 }
