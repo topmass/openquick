@@ -21,7 +21,11 @@ function printList(config: { chatModel?: string | null; imageModel?: string | nu
       console.log(`       ${dim(m.id)} – ${m.blurb}`);
     });
   }
-  console.log(`\nset the quick-wide default: ${bold('oquick models chat <n|@cf/id>')} or ${bold('oquick models image <n|@cf/id>')}`);
+  console.log(`\nset the quick-wide default: ${bold('oquick models chat <n>')} or ${bold('oquick models image <n>')}`);
+  console.log(
+    `any other Workers AI model works by full id, e.g. ${bold('oquick models chat @cf/qwen/qwq-32b')}`,
+  );
+  console.log(dim('full catalog: https://developers.cloudflare.com/workers-ai/models'));
   console.log(dim('sites can still pick per call: quick.ai.chat(p, {model: "fast" | "best" | "@cf/…"})'));
 }
 
