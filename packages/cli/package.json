@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Self-hosted Shopify-Quick-style instant sites on your own Cloudflare account: folder in, URL out, with a zero-config database, realtime, files and AI API.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/topmass/openquick.git"
+  },
+  "homepage": "https://github.com/topmass/openquick#readme",
   "type": "module",
   "bin": {
     "oquick": "dist/oquick.cjs"

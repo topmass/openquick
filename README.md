@@ -1,4 +1,6 @@
-# ⚡ OpenQuick
+<p align="center">
+  <img src=".github/banner.png" alt="OpenQuick – drop a folder, get a site" width="100%">
+</p>
 
 **Drop a folder of HTML, get a URL. Plus a zero-config database, realtime, file uploads and AI – all on your own Cloudflare account, on the free tier.**
 

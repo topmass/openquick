@@ -157,7 +157,7 @@ export function landingPage(): string {
   <footer>
     an open-source homage to <a href="https://shopify.engineering/quick" target="_blank">Shopify's Quick</a>,
     running entirely on this Cloudflare account ·
-    <a href="https://github.com/openquick/openquick" target="_blank">openquick</a>
+    <a href="https://github.com/topmass/openquick" target="_blank">openquick</a>
   </footer>
 </main>
 
