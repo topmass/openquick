@@ -153,6 +153,35 @@ OpenQuick is on the public internet, so the defaults differ:
   domain and set `ACCESS_TEAM_DOMAIN` + `ACCESS_AUD` vars on the worker – then sites are
   IAP-protected exactly like Shopify's, and `quick.id()` returns verified emails.
 
+## AI: models, free usage, and caps
+
+Every Cloudflare account – free **and** paid – gets **10,000 free Workers AI neurons per day**.
+On the free plan AI simply stops when they're spent (no bill possible); on Workers Paid,
+overage costs $0.011/1k neurons, so OpenQuick adds account-wide ceilings (below) to keep the
+worst case at pocket change.
+
+Sites pick models per call with an alias or any full catalog id:
+
+| alias     | model                                  | ≈ free calls/day* |
+| --------- | -------------------------------------- | ----------------- |
+| `fast`    | `@cf/zai-org/glm-4.7-flash`            | ~600              |
+| (default) | `@cf/meta/llama-4-scout-17b-16e-instruct` | ~200           |
+| `best`    | `@cf/openai/gpt-oss-120b`              | ~190              |
+| image     | `@cf/black-forest-labs/flux-1-schnell` | ~170 images       |
+
+*at ~1k input + 300 output tokens per call, within the daily 10k free neurons.
+
+Defaults are configurable at setup and the caps are merged over sensible defaults:
+
+```sh
+oquick setup --chat-model @cf/openai/gpt-oss-120b \\
+             --limits '{"ai_chat_platform_site":5000,"ai_chat_ip":250}'
+```
+
+Default caps: 100 chat + 30 image calls per visitor/day, 1000 + 300 per site/day,
+**2000 chat + 300 images account-wide/day** (the drain guard – ≈$1–2/day worst case on paid,
+$0 on free). The `MODELS` var can also remap the `fast`/`best` aliases.
+
 ## Limits (Cloudflare free plan)
 
 - 100k requests/day to the worker and 100k DO requests/day (an asset hit costs one of each)

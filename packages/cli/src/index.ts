@@ -35,6 +35,7 @@ ${bold('usage')}
   oquick                            open your hub (drag & drop deploys in the browser)
   oquick .                          deploy the current folder (any dir path works)
   oquick setup                      provision the platform (needs wrangler login)
+         [--chat-model <@cf/…>] [--image-model <@cf/…>] [--limits '<json>']
   oquick init [name]                scaffold a site + agent docs
   oquick deploy [dir] [--name x]    deploy a folder → URL
   oquick list                       list all sites

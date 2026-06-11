@@ -17,6 +17,11 @@ export interface Config {
   domains: Domain[];
   /** Shared R2 bucket for big-file spillover; null when R2 isn't enabled on the account. */
   r2Bucket: string | null;
+  /** Optional default-model overrides, written as CHAT_MODEL / IMAGE_MODEL vars. */
+  chatModel?: string | null;
+  imageModel?: string | null;
+  /** Optional rate-limit overrides, written as the LIMITS var (merged over defaults). */
+  limits?: Record<string, number> | null;
 }
 
 export const configDir = join(
@@ -49,7 +54,8 @@ export function saveConfig(config: Config) {
 }
 
 /** The wrangler config the CLI generates for the user's platform worker. */
-export function wranglerConfig(workerName: string, domains: Domain[], r2Bucket: string | null) {
+export function wranglerConfig(config: Config) {
+  const { workerName, domains, r2Bucket } = config;
   const routes = domains.flatMap((d) => [
     { pattern: `${d.host}/*`, zone_name: d.zone },
     ...(d.wildcard ? [{ pattern: `*.${d.host}/*`, zone_name: d.zone }] : []),
@@ -66,6 +72,11 @@ export function wranglerConfig(workerName: string, domains: Domain[], r2Bucket: 
     vars: {
       PATH_HOSTS: domains.map((d) => d.host).join(','),
       WILDCARD_BASES: domains.filter((d) => d.wildcard).map((d) => d.host).join(','),
+      ...(config.chatModel ? { CHAT_MODEL: config.chatModel } : {}),
+      ...(config.imageModel ? { IMAGE_MODEL: config.imageModel } : {}),
+      ...(config.limits && Object.keys(config.limits).length
+        ? { LIMITS: JSON.stringify(config.limits) }
+        : {}),
     },
     ...(r2Bucket ? { r2_buckets: [{ binding: 'FILES', bucket_name: r2Bucket }] } : {}),
     ...(routes.length ? { routes } : {}),

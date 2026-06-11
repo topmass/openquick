@@ -1,12 +1,11 @@
 import { parseHostConfig, resolveTarget, isValidSiteName, type Target } from './routing';
 import { SiteDO, MAX_FILE_BYTES } from './site-do';
 import {
-  DEFAULT_CHAT_MODEL,
-  DEFAULT_IMAGE_MODEL,
   MAX_R2_FILE,
   SPILL_THRESHOLD,
   r2SiteKey,
   r2UploadKey,
+  resolveModel,
   type Env,
 } from './env';
 import { SDK_SOURCE } from './generated/sdk';
@@ -423,7 +422,39 @@ async function aiAllowed(env: Env, site: string, request: Request, kind: string)
     body: JSON.stringify({ kind, ip }),
   });
   if (res.status === 429) return err(429, 'AI rate limit reached for today');
+  // Account-wide ceiling across all sites (counted in the registry instance).
+  const platform = await siteStub(env, REGISTRY).fetch('https://do/limit', {
+    method: 'POST',
+    body: JSON.stringify({ kind: `${kind}_platform`, ip: '-' }),
+  });
+  if (platform.status === 429) return err(429, 'this platform reached its AI budget for today');
   return null;
+}
+
+/** Workers AI response shapes vary by model family – normalize to plain text. */
+function extractText(result: unknown): string {
+  const r = result as Record<string, unknown> & {
+    response?: string;
+    output_text?: string;
+    output?: { type?: string; content?: { type?: string; text?: string }[] }[];
+    choices?: { message?: { content?: string } }[];
+  };
+  if (typeof r?.response === 'string' && r.response) return r.response;
+  if (typeof r?.output_text === 'string' && r.output_text) return r.output_text;
+  if (Array.isArray(r?.output)) {
+    const parts: string[] = [];
+    for (const item of r.output) {
+      if (item?.type === 'message' && Array.isArray(item.content)) {
+        for (const c of item.content) {
+          if (typeof c?.text === 'string' && c.type !== 'reasoning_text') parts.push(c.text);
+        }
+      }
+    }
+    if (parts.length) return parts.join('');
+  }
+  const cc = r?.choices?.[0]?.message?.content;
+  if (typeof cc === 'string' && cc) return cc;
+  return '';
 }
 
 async function handleAiChat(request: Request, env: Env, site: string, cors: Record<string, string>): Promise<Response> {
@@ -442,7 +473,7 @@ async function handleAiChat(request: Request, env: Env, site: string, cors: Reco
   }
   if (!Array.isArray(messages) || messages.length === 0) return err(400, 'messages or prompt required', cors);
   if (body.system) messages = [{ role: 'system', content: body.system }, ...messages];
-  const model = body.model || env.CHAT_MODEL || DEFAULT_CHAT_MODEL;
+  const model = resolveModel(env, body.model, 'chat');
 
   try {
     if (body.stream) {
@@ -452,10 +483,15 @@ async function handleAiChat(request: Request, env: Env, site: string, cors: Reco
       });
     }
     const result = (await env.AI.run(model as keyof AiModels, { messages } as never)) as {
-      response?: string;
       usage?: unknown;
     };
-    return json({ content: result.response ?? '', usage: result.usage ?? null, model }, 200, cors);
+    const content = extractText(result);
+    // Unknown shape: hand the raw result over so site code can still use it.
+    return json(
+      { content, usage: result.usage ?? null, model, ...(content ? {} : { raw: result }) },
+      200,
+      cors,
+    );
   } catch (e) {
     return err(502, `AI error: ${e instanceof Error ? e.message : 'unknown'}`, cors);
   }
@@ -466,7 +502,7 @@ async function handleAiImage(request: Request, env: Env, site: string, cors: Rec
   if (limited) return withCors(limited, cors);
   const body = (await request.json()) as { prompt?: string; model?: string };
   if (!body.prompt) return err(400, 'prompt required', cors);
-  const model = body.model || env.IMAGE_MODEL || DEFAULT_IMAGE_MODEL;
+  const model = resolveModel(env, body.model, 'image');
   try {
     const result = (await env.AI.run(model as keyof AiModels, { prompt: body.prompt } as never)) as
       | { image?: string }

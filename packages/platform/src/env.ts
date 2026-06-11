@@ -8,6 +8,8 @@ export interface Env {
   WILDCARD_BASES?: string;
   CHAT_MODEL?: string;
   IMAGE_MODEL?: string;
+  /** JSON object remapping model aliases, e.g. {"fast":"@cf/...","best":"@cf/..."} */
+  MODELS?: string;
   LIMITS?: string;
   SITE_QUOTA_BYTES?: string;
   ACCESS_TEAM_DOMAIN?: string;
@@ -17,6 +19,32 @@ export interface Env {
 export const DEFAULT_CHAT_MODEL = '@cf/meta/llama-4-scout-17b-16e-instruct';
 // flux-2 models expect multipart input; flux-1-schnell takes a plain prompt.
 export const DEFAULT_IMAGE_MODEL = '@cf/black-forest-labs/flux-1-schnell';
+
+// Sites can pass an alias instead of a full model id: quick.ai.chat(p, {model:'fast'}).
+// Neuron cost guides the choices – at 10k free neurons/day these give roughly
+// ~600 fast / ~200 default / ~190 best chat calls, or ~170 images.
+export const DEFAULT_MODEL_ALIASES: Record<string, string> = {
+  default: DEFAULT_CHAT_MODEL,
+  fast: '@cf/zai-org/glm-4.7-flash',
+  best: '@cf/openai/gpt-oss-120b',
+  image: DEFAULT_IMAGE_MODEL,
+};
+
+export function resolveModel(env: Env, requested: string | undefined, kind: 'chat' | 'image'): string {
+  const aliases = { ...DEFAULT_MODEL_ALIASES };
+  if (env.MODELS) {
+    try {
+      Object.assign(aliases, JSON.parse(env.MODELS));
+    } catch {
+      /* keep defaults */
+    }
+  }
+  if (env.CHAT_MODEL) aliases.default = env.CHAT_MODEL;
+  if (env.IMAGE_MODEL) aliases.image = env.IMAGE_MODEL;
+  if (!requested) return kind === 'image' ? aliases.image : aliases.default;
+  if (requested.startsWith('@')) return requested;
+  return aliases[requested] ?? (kind === 'image' ? aliases.image : aliases.default);
+}
 
 // Files larger than this spill from DO SQLite to R2 (when a bucket is bound).
 export const SPILL_THRESHOLD = 5 * 1024 * 1024;
@@ -34,6 +62,11 @@ export const DEFAULT_LIMITS: Record<string, number> = {
   ai_chat_site: 1000,
   ai_image_ip: 30,
   ai_image_site: 300,
+  // Account-wide daily ceilings across ALL sites – the drain guard for Workers
+  // Paid, where neurons beyond the free 10k/day bill at $0.011/1k. Worst case
+  // with default models ≈ a couple of dollars/day, not an open tap.
+  ai_chat_platform_site: 2000,
+  ai_image_platform_site: 300,
 };
 
 export function limitsFromEnv(env: Env): Record<string, number> {

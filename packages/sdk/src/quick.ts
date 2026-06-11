@@ -228,7 +228,17 @@ type PresenceEvent = { ev: 'join' | 'leave' | 'you'; who: From; members: From[] 
           const payload = line.slice(6).trim();
           if (payload === '[DONE]') continue;
           try {
-            const token = (JSON.parse(payload) as { response?: string }).response ?? '';
+            // SSE token shapes vary by model family.
+            const obj = JSON.parse(payload) as {
+              response?: string;
+              delta?: string | { content?: string };
+              choices?: { delta?: { content?: string } }[];
+            };
+            const token =
+              obj.response ??
+              obj.choices?.[0]?.delta?.content ??
+              (typeof obj.delta === 'string' ? obj.delta : obj.delta?.content) ??
+              '';
             if (token) {
               full += token;
               opts.onToken(token);

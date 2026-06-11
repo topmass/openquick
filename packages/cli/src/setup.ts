@@ -22,7 +22,7 @@ export function writePlatform(config: Config) {
   cpSync(join(src, 'worker.js'), join(platformDir, 'worker.js'));
   writeFileSync(
     join(platformDir, 'wrangler.json'),
-    JSON.stringify(wranglerConfig(config.workerName, config.domains, config.r2Bucket), null, 2) + '\n',
+    JSON.stringify(wranglerConfig(config), null, 2) + '\n',
   );
 }
 
@@ -98,6 +98,15 @@ export async function setup(flags: Record<string, string | boolean>) {
   const accountName = who.accounts.find((a) => a.id === accountId)?.name ?? accountId;
   console.log(`\nDeploying platform worker ${bold(workerName)} to ${bold(accountName)}…\n`);
 
+  let limits = existing?.limits ?? null;
+  if (typeof flags.limits === 'string') {
+    try {
+      limits = JSON.parse(flags.limits);
+    } catch {
+      fail('--limits must be JSON, e.g. \'{"ai_chat_platform_site":5000}\'');
+    }
+  }
+
   const config: Config = {
     accountId,
     workerName,
@@ -105,6 +114,9 @@ export async function setup(flags: Record<string, string | boolean>) {
     token: existing?.token ?? randomBytes(32).toString('hex'),
     domains: existing?.domains ?? [],
     r2Bucket: existing?.r2Bucket ?? null,
+    chatModel: typeof flags['chat-model'] === 'string' ? flags['chat-model'] : existing?.chatModel ?? null,
+    imageModel: typeof flags['image-model'] === 'string' ? flags['image-model'] : existing?.imageModel ?? null,
+    limits,
   };
 
   config.r2Bucket = config.r2Bucket ?? (await ensureBucket(workerName, accountId));
@@ -131,6 +143,18 @@ export async function setup(flags: Record<string, string | boolean>) {
   saveConfig(config);
 
   console.log(`\n${green('✔')} OpenQuick is live at ${bold(cyan(config.platformUrl))}\n`);
+  console.log(`AI (Workers AI, 10k free neurons/day on every plan):`);
+  console.log(
+    `  models: default ${bold(config.chatModel ?? 'llama-4-scout')} · fast glm-4.7-flash · best gpt-oss-120b · image ${
+      config.imageModel ?? 'flux-1-schnell'
+    }`,
+  );
+  console.log(
+    `  caps:   ${dim('per visitor/day:')} 100 chat, 30 images   ${dim('account-wide/day:')} 2000 chat, 300 images`,
+  );
+  console.log(
+    dim(`  change: oquick setup --chat-model <@cf/…> --image-model <@cf/…> --limits '{"ai_chat_platform_site":5000}'\n`),
+  );
   console.log(`Next steps:`);
   console.log(`  ${bold('oquick init mysite')}   scaffold a site (with agent docs)`);
   console.log(`  ${bold('oquick deploy')}        deploy the current folder`);

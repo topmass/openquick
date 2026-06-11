@@ -79,7 +79,12 @@ await quick.ai.chat('Tell a story', { onToken: (t) => out.append(t) });   // str
 const { url } = await quick.ai.image('a watercolor fox');                  // generated image
 ```
 
-AI calls are rate-limited per visitor per day – handle errors gracefully.
+Model selection: omit `model` for a balanced default, or pass an alias –
+`{ model: 'fast' }` (cheapest, ~3× more free calls) or `{ model: 'best' }` (strong reasoning).
+Any full Workers AI id like `@cf/openai/gpt-oss-120b` also works.
+
+AI calls are rate-limited per visitor and per day across the platform – handle 429 errors
+gracefully (show "AI is napping until tomorrow" rather than crashing).
 
 ### Identity
 
