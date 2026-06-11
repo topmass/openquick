@@ -66,7 +66,7 @@ function forward(request: Request, doPath: string, extraHeaders: Record<string, 
 async function handlePlatform(request: Request, env: Env, path: string, url: URL): Promise<Response> {
   if (path === '/' && request.method === 'GET') {
     return new Response(landingPage(url.host), {
-      headers: { 'content-type': 'text/html;charset=utf-8' },
+      headers: { 'content-type': 'text/html;charset=utf-8', 'cache-control': 'no-cache' },
     });
   }
   if (path === '/__platform/health') {

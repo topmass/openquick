@@ -97,7 +97,7 @@ with its Durable Object.
 ## Commands
 
 ```
-oquick                                  web UI: drag & drop a folder, get a URL
+oquick                                  open your hub: drag & drop a folder, get a URL
 oquick .                                deploy the current folder (any dir path works)
 oquick setup                            provision/upgrade the platform worker
 oquick init [name]                      scaffold a site + agent docs
@@ -105,13 +105,25 @@ oquick deploy [dir] [--name x]          deploy a folder (diff upload) → URL
 oquick list                             all sites with size + last deploy
 oquick open <site>                      open in browser
 oquick delete <site> [-y]               delete a site and all its data
-oquick ui [--port 4500]                 the web UI (same as bare oquick)
+oquick token                            print the deploy token (for hub teammates)
 oquick dev [dir] [--port 4400]          local server against the real deployed API
 oquick domain add|list|remove           custom domains
 ```
 
-The web UI runs locally (`127.0.0.1` only) and proxies deploys through your machine, so the
-deploy token never reaches the browser or leaves your computer.
+## The hub
+
+The platform's root URL **is** a deploy surface: a Quick-style hub where anyone you choose can
+drag & drop a folder and get a site – no CLI, no node, nothing installed. It shows every site
+on the platform, celebrates fresh deploys with confetti, and deletes sites too.
+
+Sharing it: run `oquick token`, send a teammate the hub URL + token, they paste it once
+(it stays in their browser's localStorage). Deploys and deletes require the token; browsing
+sites doesn't. `oquick` opens the hub with your token handed over automatically via the URL
+fragment (fragments never leave the browser).
+
+**Roadmap – org mode:** Cloudflare Access in front of the hub + sites (free ≤50 users), so
+anyone on the Cloudflare account just logs in with their identity provider and deploys from
+the hub with no token at all – the full IAP-style Quick experience.
 
 ## What can you deploy?
 

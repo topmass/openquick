@@ -5,7 +5,7 @@ import { init } from './scaffold';
 import { deleteSite, list, open } from './misc';
 import { domain } from './domain';
 import { dev } from './dev';
-import { ui } from './ui';
+import { token, ui } from './ui';
 import { loadConfig } from './config';
 import { bold, dim, fail } from './util';
 
@@ -32,7 +32,7 @@ function parseArgs(argv: string[]): { positionals: string[]; flags: Record<strin
 const HELP = `${bold('oquick')} – instant sites with batteries included, on your own Cloudflare account
 
 ${bold('usage')}
-  oquick                            open the web UI (drag & drop deploys)
+  oquick                            open your hub (drag & drop deploys in the browser)
   oquick .                          deploy the current folder (any dir path works)
   oquick setup                      provision the platform (needs wrangler login)
   oquick init [name]                scaffold a site + agent docs
@@ -40,7 +40,7 @@ ${bold('usage')}
   oquick list                       list all sites
   oquick open <site>                open a site in the browser
   oquick delete <site> [-y]         delete a site and its data
-  oquick ui [--port 4500]           the drag & drop web UI
+  oquick token                      print the deploy token (for teammates using the hub)
   oquick dev [dir] [--port 4400]    local server against the real deployed API
   oquick domain add <host> [--wildcard] [--zone z]
                                     serve sites from your own domain
@@ -84,7 +84,10 @@ async function main() {
     case 'open':
       return open(rest[0]);
     case 'ui':
+    case 'hub':
       return ui(flags);
+    case 'token':
+      return token();
     case 'dev':
       return dev(rest[0], flags);
     case 'domain':
