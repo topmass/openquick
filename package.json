@@ -1,0 +1,11 @@
+{
+  "name": "openquick-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --filter @openquick/sdk build && pnpm --filter @openquick/platform build && pnpm --filter openquick build",
+    "test": "pnpm -r test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

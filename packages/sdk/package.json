@@ -1,0 +1,14 @@
+{
+  "name": "@openquick/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/quick.ts --bundle --format=iife --target=es2020 --outfile=dist/quick.js",
+    "test": "tsc"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.5",
+    "typescript": "5.8.3"
+  }
+}

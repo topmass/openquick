@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__SITE_NAME__</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 600px; margin: 4rem auto; padding: 0 1rem;
+      line-height: 1.6; text-align: center;
+    }
+    h1 { font-size: 2.2rem; }
+    .count { font-variant-numeric: tabular-nums; font-weight: 700; }
+    .muted { opacity: .55; font-size: .85em; }
+  </style>
+</head>
+<body>
+  <h1>⚡ __SITE_NAME__</h1>
+  <p>This page has been visited <span class="count" id="count">…</span> times,
+     counted live by <code>quick.db</code>.</p>
+  <p class="muted">Edit <code>index.html</code> and run <code>oquick deploy</code>.
+     The full API is documented in <code>AGENTS.md</code> – or just point your coding agent at this folder.</p>
+
+  <script src="__quick.js"></script>
+  <script>
+    const stats = quick.db.collection('stats');
+    const el = document.getElementById('count');
+
+    async function bump() {
+      try {
+        const current = await stats.get('visits').catch(() => null);
+        if (!current) await stats.create({ id: 'visits', count: 1 });
+        else await stats.update('visits', { count: (current.count ?? 0) + 1 });
+      } catch (e) { /* another visitor may have created it first */ }
+      const doc = await stats.get('visits');
+      el.textContent = doc.count;
+    }
+    stats.subscribe({ onUpdate: (doc) => { if (doc.id === 'visits') el.textContent = doc.count; } });
+    bump();
+  </script>
+</body>
+</html>

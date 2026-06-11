@@ -1,0 +1,21 @@
+{
+  "name": "@openquick/platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "embed-sdk": "node scripts/embed-sdk.mjs",
+    "build": "pnpm run embed-sdk && tsc",
+    "test": "pnpm run embed-sdk && vitest run",
+    "deploy": "pnpm run embed-sdk && wrangler deploy"
+  },
+  "dependencies": {
+    "jose": "5.9.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260601.1",
+    "typescript": "5.8.3",
+    "vitest": "3.1.4",
+    "wrangler": "4.97.0"
+  }
+}

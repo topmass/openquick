@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guestbook</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; max-width: 560px; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { display: flex; align-items: baseline; gap: .6rem; }
+    h1 small { font-size: .5em; opacity: .5; font-weight: normal; }
+    form { display: flex; gap: .5rem; margin: 1rem 0; }
+    input { flex: 1; padding: .55rem .7rem; border-radius: 8px; border: 1px solid rgba(125,125,125,.4); font: inherit; background: transparent; }
+    button { padding: .55rem 1rem; border-radius: 8px; border: none; background: #6d28d9; color: #fff; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .5; }
+    .entry { padding: .6rem .8rem; border: 1px solid rgba(125,125,125,.25); border-radius: 10px; margin: .5rem 0; animation: pop .25s ease; }
+    .entry b { color: #8b5cf6; }
+    .entry time { float: right; opacity: .45; font-size: .8em; }
+    #vibe { margin-top: 1.5rem; padding: .8rem 1rem; border-radius: 10px; background: rgba(139,92,246,.12); display: none; }
+    .muted { opacity: .55; font-size: .85em; }
+    @keyframes pop { from { transform: scale(.97); opacity: 0; } }
+  </style>
+</head>
+<body>
+  <h1>📖 Guestbook <small id="online"></small></h1>
+  <p class="muted">Entries sync live to everyone via <code>quick.db</code> subscriptions.</p>
+
+  <form id="nameForm">
+    <input id="name" placeholder="Your name" maxlength="32" required>
+  </form>
+  <form id="entryForm">
+    <input id="message" placeholder="Leave a message…" maxlength="280" required>
+    <button>Sign</button>
+  </form>
+  <button id="summarize" style="background:#0ea5e9">✨ AI: summarize the vibe</button>
+  <p id="vibe"></p>
+  <div id="entries"></div>
+
+  <script src="__quick.js"></script>
+  <script>
+    const entries = quick.db.collection('entries');
+    const entriesEl = document.getElementById('entries');
+    const nameInput = document.getElementById('name');
+    const seen = new Set();
+
+    quick.id().then((me) => { if (me.name) nameInput.value = me.name; });
+
+    function render(doc, prepend = true) {
+      if (seen.has(doc.id)) return;
+      seen.add(doc.id);
+      const el = document.createElement('div');
+      el.className = 'entry';
+      const when = new Date(doc.createdAt).toLocaleTimeString();
+      el.innerHTML = `<time>${when}</time><b></b> <span></span>`;
+      el.querySelector('b').textContent = doc.name || 'anonymous';
+      el.querySelector('span').textContent = doc.message;
+      prepend ? entriesEl.prepend(el) : entriesEl.append(el);
+    }
+
+    entries.list({ order: 'desc', limit: 50 }).then((docs) => docs.forEach((d) => render(d, false)));
+    entries.subscribe({ onCreate: render });
+
+    document.getElementById('entryForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const message = document.getElementById('message').value.trim();
+      const name = nameInput.value.trim() || 'anonymous';
+      if (!message) return;
+      quick.id.setName(name);
+      document.getElementById('message').value = '';
+      await entries.create({ name, message });
+    });
+    document.getElementById('nameForm').addEventListener('submit', (e) => e.preventDefault());
+
+    // Presence: show how many people are here right now.
+    const lobby = quick.channel('guestbook');
+    const online = document.getElementById('online');
+    lobby.on('presence', ({ members }) => {
+      online.textContent = `${members.length + 1} online`;
+    });
+
+    // AI: summarize recent entries with the account's Workers AI binding.
+    document.getElementById('summarize').addEventListener('click', async (e) => {
+      const btn = e.target;
+      const vibe = document.getElementById('vibe');
+      btn.disabled = true;
+      vibe.style.display = 'block';
+      vibe.textContent = 'thinking…';
+      try {
+        const docs = await entries.list({ order: 'desc', limit: 30 });
+        const text = docs.map((d) => `${d.name}: ${d.message}`).join('\n') || '(empty guestbook)';
+        vibe.textContent = await quick.ai.chat(
+          `Here is a guestbook. Describe the vibe in one playful sentence:\n\n${text}`,
+        );
+      } catch (err) {
+        vibe.textContent = `AI unavailable: ${err.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

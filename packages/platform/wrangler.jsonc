@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "openquick",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [{ "name": "SITE", "class_name": "SiteDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SiteDO"] }],
+  "ai": { "binding": "AI" },
+  "observability": { "enabled": true },
+  "vars": {
+    // "PATH_HOSTS": "quick.example.com",            – extra path-mode hosts, comma separated
+    // "WILDCARD_BASES": "quick.example.com",        – <site>.<base> subdomain mode bases
+    // "CHAT_MODEL": "@cf/meta/llama-4-scout-17b-16e-instruct",
+    // "IMAGE_MODEL": "@cf/black-forest-labs/flux-2-klein-4b",
+    // "LIMITS": "{\"db_ip\":5000,\"ai_chat_ip\":100,\"ai_chat_site\":1000,\"ai_image_ip\":30,\"ai_image_site\":200,\"upload_ip\":100}",
+    // "ACCESS_TEAM_DOMAIN": "yourteam",             – Cloudflare Access team for identity
+    // "ACCESS_AUD": "..."                           – Access application AUD tag
+  }
+  // Custom-domain modes append routes here, e.g.:
+  // "routes": [{ "pattern": "quick.example.com/*", "zone_name": "example.com" }]
+}

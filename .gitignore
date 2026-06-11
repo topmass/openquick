@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.wrangler/
+*.log
+.DS_Store
+packages/platform/src/generated/
+packages/cli/platform/
+packages/cli/templates/
