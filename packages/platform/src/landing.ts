@@ -3,7 +3,7 @@
 // goes live. Visual language is an homage to Shopify's Quick: electric indigo,
 // grid paper, sticker-style cards, confetti.
 
-export function landingPage(host: string): string {
+export function landingPage(): string {
   return `<!doctype html>
 <html lang="en">
 <head>

@@ -1,5 +1,5 @@
 import { parseHostConfig, resolveTarget, isValidSiteName, type Target } from './routing';
-import { SiteDO, MAX_FILE_BYTES } from './site-do';
+import { SiteDO } from './site-do';
 import {
   MAX_R2_FILE,
   SPILL_THRESHOLD,
@@ -65,7 +65,7 @@ function forward(request: Request, doPath: string, extraHeaders: Record<string, 
 
 async function handlePlatform(request: Request, env: Env, path: string, url: URL): Promise<Response> {
   if (path === '/' && request.method === 'GET') {
-    return new Response(landingPage(url.host), {
+    return new Response(landingPage(), {
       headers: { 'content-type': 'text/html;charset=utf-8', 'cache-control': 'no-cache' },
     });
   }
@@ -567,5 +567,3 @@ async function identity(request: Request, env: Env): Promise<{ email?: string }>
     return {};
   }
 }
-
-export { MAX_FILE_BYTES };
