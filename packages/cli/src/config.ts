@@ -28,6 +28,8 @@ export interface Config {
   accessTeam?: string | null;
   accessAud?: string | null;
   requireAccess?: boolean;
+  /** Anyone may deploy/update sites without a token (delete stays gated). */
+  openDeploys?: boolean;
 }
 
 export const configDir = join(
@@ -87,6 +89,7 @@ export function wranglerConfig(config: Config) {
       ...(config.accessTeam ? { ACCESS_TEAM_DOMAIN: config.accessTeam } : {}),
       ...(config.accessAud ? { ACCESS_AUD: config.accessAud } : {}),
       ...(config.requireAccess ? { REQUIRE_ACCESS: '1' } : {}),
+      ...(config.openDeploys ? { OPEN_DEPLOYS: '1' } : {}),
     },
     ...(r2Bucket ? { r2_buckets: [{ binding: 'FILES', bucket_name: r2Bucket }] } : {}),
     ...(routes.length ? { routes } : {}),

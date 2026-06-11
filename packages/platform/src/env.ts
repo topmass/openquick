@@ -20,6 +20,8 @@ export interface Env {
   HUB_DISABLED?: string;
   /** "1" requires a valid Cloudflare Access JWT on EVERY request (org mode). */
   REQUIRE_ACCESS?: string;
+  /** "1" lets anyone deploy/update sites without a token (delete stays gated). */
+  OPEN_DEPLOYS?: string;
 }
 
 // Sites pass an alias ('fast' | 'best') or any full @cf/ id per call; aliases
@@ -61,6 +63,9 @@ export const DEFAULT_LIMITS: Record<string, number> = {
   // with default models ≈ a couple of dollars/day, not an open tap.
   ai_chat_platform_site: 2000,
   ai_image_platform_site: 300,
+  // Guards for OPEN_DEPLOYS mode (tokenless creates on a public platform).
+  deploy_ip: 50,
+  max_sites: 500,
 };
 
 export function limitsFromEnv(env: Env): Record<string, number> {

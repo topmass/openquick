@@ -13,7 +13,10 @@ import { bold, dim, fail } from './util';
 
 declare const VERSION: string;
 
-const BOOL_FLAGS = new Set(['yes', 'wildcard', 'help', 'version', 'no-open', 'no-hub', 'hub', 'private', 'public']);
+const BOOL_FLAGS = new Set([
+  'yes', 'wildcard', 'help', 'version', 'no-open', 'no-hub', 'hub', 'private', 'public',
+  'open-deploys', 'token-deploys',
+]);
 
 function parseArgs(argv: string[]): { positionals: string[]; flags: Record<string, string | boolean> } {
   const positionals: string[] = [];
@@ -43,7 +46,7 @@ ${bold('usage')}
   oquick list                       list all sites
   oquick open <site>                open a site in the browser
   oquick delete <site> [-y]         delete a site and its data
-  oquick token                      print the deploy token (for teammates using the hub)
+  oquick token [open|require]       print the deploy token / open deploys to everyone
   oquick models [chat|image <n>]    list AI models / set the quick-wide default
   oquick auth [enable|disable]      org mode: require Cloudflare Access logins everywhere
   oquick dev [dir] [--port 4400]    local server against the real deployed API
@@ -92,7 +95,7 @@ async function main() {
     case 'hub':
       return ui(flags);
     case 'token':
-      return token();
+      return token(rest);
     case 'models':
       return models(rest);
     case 'auth':

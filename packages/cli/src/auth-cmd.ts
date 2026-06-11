@@ -19,6 +19,9 @@ export async function auth(args: string[], flags: Record<string, string | boolea
     } else {
       console.log(`${dim('○')} open mode – sites are public, deploys are token-gated (the default)`);
     }
+    if (config.openDeploys) {
+      console.log(`${yellow('●')} deploys are OPEN – anyone can create/update sites (delete still needs the token)`);
+    }
     console.log(dim(`\noquick auth enable --team <team> --aud <tag>   |   oquick auth disable`));
     return;
   }

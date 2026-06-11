@@ -121,6 +121,7 @@ export async function setup(flags: Record<string, string | boolean>) {
     accessTeam: typeof flags['access-team'] === 'string' ? flags['access-team'] : existing?.accessTeam ?? null,
     accessAud: typeof flags['access-aud'] === 'string' ? flags['access-aud'] : existing?.accessAud ?? null,
     requireAccess: flags.private ? true : flags.public ? false : existing?.requireAccess ?? false,
+    openDeploys: flags['open-deploys'] ? true : flags['token-deploys'] ? false : existing?.openDeploys ?? false,
   };
   if (config.requireAccess && (!config.accessTeam || !config.accessAud)) {
     fail(`--private needs Cloudflare Access configured – run ${bold('oquick auth enable')} for the guided steps`);

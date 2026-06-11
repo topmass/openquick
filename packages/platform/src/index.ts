@@ -3,6 +3,7 @@ import { SiteDO } from './site-do';
 import {
   MAX_R2_FILE,
   SPILL_THRESHOLD,
+  limitsFromEnv,
   r2SiteKey,
   r2UploadKey,
   resolveModel,
@@ -80,6 +81,7 @@ async function handlePlatform(request: Request, env: Env, path: string, url: URL
       version: VERSION,
       tokenConfigured: !!env.DEPLOY_TOKEN,
       access: env.REQUIRE_ACCESS === '1',
+      openDeploys: env.OPEN_DEPLOYS === '1',
       email: env.REQUIRE_ACCESS === '1' ? (await verifyAccessJwt(request, env))?.email ?? null : null,
     });
   }
@@ -88,12 +90,33 @@ async function handlePlatform(request: Request, env: Env, path: string, url: URL
     return new Response(res.body, { status: res.status, headers: { 'content-type': 'application/json' } });
   }
 
-  const denied = await checkToken(request, env);
-  if (denied) return denied;
+  // Open-deploys mode: anyone may create/update sites; delete stays token-gated.
+  const openDeploys = env.OPEN_DEPLOYS === '1' && path.startsWith('/__platform/deploy/');
+  if (!openDeploys) {
+    const denied = await checkToken(request, env);
+    if (denied) return denied;
+  }
+  // Tokenless visitors get guard rails (org-mode users already passed the Access gate).
+  const tokenless = openDeploys && !hasValidToken(request, env) && env.REQUIRE_ACCESS !== '1';
 
   if (path === '/__platform/deploy/start' && request.method === 'POST') {
     const body = (await request.json()) as { site?: string; manifest?: unknown };
     if (!body.site || !isValidSiteName(body.site)) return err(400, 'invalid site name');
+    if (tokenless) {
+      const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
+      const limited = await siteStub(env, REGISTRY).fetch('https://do/limit', {
+        method: 'POST',
+        body: JSON.stringify({ kind: 'deploy', ip }),
+      });
+      if (limited.status === 429) return err(429, 'daily deploy limit reached');
+      const { sites } = (await siteStub(env, REGISTRY)
+        .fetch('https://do/registry/list')
+        .then((r) => r.json())) as { sites: { name: string }[] };
+      const maxSites = limitsFromEnv(env).max_sites ?? 500;
+      if (!sites.some((s) => s.name === body.site) && sites.length >= maxSites) {
+        return err(400, 'this platform reached its site limit');
+      }
+    }
     const res = await siteStub(env, body.site).fetch('https://do/deploy/start', {
       method: 'POST',
       body: JSON.stringify({ manifest: body.manifest, r2Available: !!env.FILES }),

@@ -29,6 +29,8 @@ Tune the install with flags, at setup time or any time later (re-running is safe
 oquick setup --no-hub        # no hub page – sites only ("--hub" brings it back)
 oquick setup --private       # org mode: require Cloudflare Access logins for EVERYTHING
                              # (guided one-time setup: oquick auth enable)
+oquick token open            # playground mode: ANYONE may deploy sites from the hub,
+                             # no token (delete keeps the token; per-IP daily caps apply)
 oquick models                # pick different default AI models from a list
 oquick domain add quick.you.com   # pretty URLs on your own domain
 ```
@@ -169,6 +171,11 @@ OpenQuick is on the public internet, so the defaults differ:
 
 - **Deploys/deletes require a bearer token**, generated at setup, stored in
   `~/.config/openquick/config.json` and as a Worker secret. Only you can publish sites.
+- **Playground mode (`oquick token open`)** drops the token for deploys so anyone can publish
+  through your hub – the full Geocities-energy Quick. Deletes keep the token, and tokenless
+  visitors get per-IP daily deploy caps plus a platform-wide site limit (defaults 50/day and
+  500 sites, tunable via `--limits '{"deploy_ip":…,"max_sites":…}'`). `oquick token require`
+  restores the gate.
 - **Site APIs (db/files/ai/channels) are open** to anyone who has a site's URL – that's the
   zero-config magic, same trade Quick makes. Guardrails: per-visitor daily rate limits
   (AI is limited hardest), per-site caps, and cross-origin calls are blocked.
