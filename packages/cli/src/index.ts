@@ -6,6 +6,7 @@ import { deleteSite, list, open } from './misc';
 import { domain } from './domain';
 import { dev } from './dev';
 import { token, ui } from './ui';
+import { models } from './models-cmd';
 import { loadConfig } from './config';
 import { bold, dim, fail } from './util';
 
@@ -42,6 +43,7 @@ ${bold('usage')}
   oquick open <site>                open a site in the browser
   oquick delete <site> [-y]         delete a site and its data
   oquick token                      print the deploy token (for teammates using the hub)
+  oquick models [chat|image <n>]    list AI models / set the quick-wide default
   oquick dev [dir] [--port 4400]    local server against the real deployed API
   oquick domain add <host> [--wildcard] [--zone z]
                                     serve sites from your own domain
@@ -89,6 +91,8 @@ async function main() {
       return ui(flags);
     case 'token':
       return token();
+    case 'models':
+      return models(rest);
     case 'dev':
       return dev(rest[0], flags);
     case 'domain':

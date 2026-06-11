@@ -250,8 +250,14 @@ type PresenceEvent = { ev: 'join' | 'leave' | 'you'; who: From; members: From[] 
       }
       return full;
     },
-    async image(prompt: string, opts: { model?: string } = {}): Promise<{ blob: Blob; url: string }> {
-      const res = await fetch(`${api}/ai/image`, jsonInit('POST', { prompt, model: opts.model }));
+    async image(
+      prompt: string,
+      opts: { model?: string; width?: number; height?: number } = {},
+    ): Promise<{ blob: Blob; url: string }> {
+      const res = await fetch(
+        `${api}/ai/image`,
+        jsonInit('POST', { prompt, model: opts.model, width: opts.width, height: opts.height }),
+      );
       if (!res.ok) {
         let message = `${res.status}`;
         try {

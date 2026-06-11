@@ -8,6 +8,7 @@ import {
   resolveModel,
   type Env,
 } from './env';
+import { isMultipartModel } from './models';
 import { SDK_SOURCE } from './generated/sdk';
 import { landingPage } from './landing';
 
@@ -485,7 +486,7 @@ async function handleAiChat(request: Request, env: Env, site: string, cors: Reco
     const result = (await env.AI.run(model as keyof AiModels, { messages } as never)) as {
       usage?: unknown;
     };
-    const content = extractText(result);
+    const content = extractText(result).trim();
     // Unknown shape: hand the raw result over so site code can still use it.
     return json(
       { content, usage: result.usage ?? null, model, ...(content ? {} : { raw: result }) },
@@ -500,11 +501,35 @@ async function handleAiChat(request: Request, env: Env, site: string, cors: Reco
 async function handleAiImage(request: Request, env: Env, site: string, cors: Record<string, string>): Promise<Response> {
   const limited = await aiAllowed(env, site, request, 'ai_image');
   if (limited) return withCors(limited, cors);
-  const body = (await request.json()) as { prompt?: string; model?: string };
+  const body = (await request.json()) as {
+    prompt?: string;
+    model?: string;
+    width?: number;
+    height?: number;
+  };
   if (!body.prompt) return err(400, 'prompt required', cors);
   const model = resolveModel(env, body.model, 'image');
+  const clamp = (n: unknown, fallback: number) =>
+    Math.min(1024, Math.max(256, Math.round((Number(n) || fallback) / 32) * 32));
   try {
-    const result = (await env.AI.run(model as keyof AiModels, { prompt: body.prompt } as never)) as
+    let input: Record<string, unknown>;
+    if (isMultipartModel(model)) {
+      // flux-2 family takes multipart form input instead of a JSON prompt.
+      const form = new FormData();
+      form.append('prompt', body.prompt);
+      form.append('width', String(clamp(body.width, 1024)));
+      form.append('height', String(clamp(body.height, 1024)));
+      const formResponse = new Response(form);
+      input = {
+        multipart: {
+          body: formResponse.body,
+          contentType: formResponse.headers.get('content-type'),
+        },
+      };
+    } else {
+      input = { prompt: body.prompt };
+    }
+    const result = (await env.AI.run(model as keyof AiModels, input as never)) as
       | { image?: string }
       | ReadableStream;
     if (result instanceof ReadableStream) {

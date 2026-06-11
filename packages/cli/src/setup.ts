@@ -145,15 +145,15 @@ export async function setup(flags: Record<string, string | boolean>) {
   console.log(`\n${green('✔')} OpenQuick is live at ${bold(cyan(config.platformUrl))}\n`);
   console.log(`AI (Workers AI, 10k free neurons/day on every plan):`);
   console.log(
-    `  models: default ${bold(config.chatModel ?? 'llama-4-scout')} · fast glm-4.7-flash · best gpt-oss-120b · image ${
-      config.imageModel ?? 'flux-1-schnell'
+    `  models: default ${bold(config.chatModel ?? 'Gemma 4 26B')} · fast GLM-4.7 Flash · best Kimi K2.6 · image ${
+      config.imageModel ?? 'FLUX.2 Klein'
     }`,
   );
   console.log(
     `  caps:   ${dim('per visitor/day:')} 100 chat, 30 images   ${dim('account-wide/day:')} 2000 chat, 300 images`,
   );
   console.log(
-    dim(`  change: oquick setup --chat-model <@cf/…> --image-model <@cf/…> --limits '{"ai_chat_platform_site":5000}'\n`),
+    dim(`  change: oquick models (pick quick-wide defaults from a list) · --limits '{"ai_chat_platform_site":5000}'\n`),
   );
   console.log(`Next steps:`);
   console.log(`  ${bold('oquick init mysite')}   scaffold a site (with agent docs)`);

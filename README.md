@@ -160,22 +160,25 @@ On the free plan AI simply stops when they're spent (no bill possible); on Worke
 overage costs $0.011/1k neurons, so OpenQuick adds account-wide ceilings (below) to keep the
 worst case at pocket change.
 
-Sites pick models per call with an alias or any full catalog id:
+Sites pick models per call with an alias or any full catalog id; the platform owner picks the
+quick-wide defaults from a curated list of recent models with **`oquick models`**:
 
-| alias     | model                                  | ≈ free calls/day* |
-| --------- | -------------------------------------- | ----------------- |
-| `fast`    | `@cf/zai-org/glm-4.7-flash`            | ~600              |
-| (default) | `@cf/meta/llama-4-scout-17b-16e-instruct` | ~200           |
-| `best`    | `@cf/openai/gpt-oss-120b`              | ~190              |
-| image     | `@cf/black-forest-labs/flux-1-schnell` | ~170 images       |
+| alias     | model                                   | ≈ free calls/day* |
+| --------- | --------------------------------------- | ----------------- |
+| (default) | `@cf/google/gemma-4-26b-a4b-it`         | ~580              |
+| `fast`    | `@cf/zai-org/glm-4.7-flash`             | ~610              |
+| `best`    | `@cf/moonshotai/kimi-k2.6`              | ~50               |
+| image     | `@cf/black-forest-labs/flux-2-klein-4b` | ~90 images        |
 
-*at ~1k input + 300 output tokens per call, within the daily 10k free neurons.
+*at ~1k input + 300 output tokens per call (or one 1024px image), within the daily 10k free
+neurons. The list also includes Qwen3 30B (~700/day, the cheapest), Nemotron 3 120B, the
+gpt-oss pair and FLUX.1 Schnell / FLUX.2 Klein 9B for images – `oquick models chat <n>` /
+`oquick models image <n>` switches the default and redeploys.
 
-Defaults are configurable at setup and the caps are merged over sensible defaults:
+Caps are merged over sensible defaults:
 
 ```sh
-oquick setup --chat-model @cf/openai/gpt-oss-120b \\
-             --limits '{"ai_chat_platform_site":5000,"ai_chat_ip":250}'
+oquick setup --limits '{"ai_chat_platform_site":5000,"ai_chat_ip":250}'
 ```
 
 Default caps: 100 chat + 30 image calls per visitor/day, 1000 + 300 per site/day,

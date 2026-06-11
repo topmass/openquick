@@ -1,3 +1,5 @@
+import { DEFAULT_MODEL_ALIASES } from './models';
+
 export interface Env {
   SITE: DurableObjectNamespace;
   AI: Ai;
@@ -16,20 +18,8 @@ export interface Env {
   ACCESS_AUD?: string;
 }
 
-export const DEFAULT_CHAT_MODEL = '@cf/meta/llama-4-scout-17b-16e-instruct';
-// flux-2 models expect multipart input; flux-1-schnell takes a plain prompt.
-export const DEFAULT_IMAGE_MODEL = '@cf/black-forest-labs/flux-1-schnell';
-
-// Sites can pass an alias instead of a full model id: quick.ai.chat(p, {model:'fast'}).
-// Neuron cost guides the choices – at 10k free neurons/day these give roughly
-// ~600 fast / ~200 default / ~190 best chat calls, or ~170 images.
-export const DEFAULT_MODEL_ALIASES: Record<string, string> = {
-  default: DEFAULT_CHAT_MODEL,
-  fast: '@cf/zai-org/glm-4.7-flash',
-  best: '@cf/openai/gpt-oss-120b',
-  image: DEFAULT_IMAGE_MODEL,
-};
-
+// Sites pass an alias ('fast' | 'best') or any full @cf/ id per call; aliases
+// and quick-wide defaults are remappable via the MODELS/CHAT_MODEL/IMAGE_MODEL vars.
 export function resolveModel(env: Env, requested: string | undefined, kind: 'chat' | 'image'): string {
   const aliases = { ...DEFAULT_MODEL_ALIASES };
   if (env.MODELS) {
