@@ -1,6 +1,8 @@
 export interface Env {
   SITE: DurableObjectNamespace;
   AI: Ai;
+  /** Optional shared R2 bucket – big files spill here; absent if R2 isn't enabled. */
+  FILES?: R2Bucket;
   DEPLOY_TOKEN?: string;
   PATH_HOSTS?: string;
   WILDCARD_BASES?: string;
@@ -15,6 +17,15 @@ export interface Env {
 export const DEFAULT_CHAT_MODEL = '@cf/meta/llama-4-scout-17b-16e-instruct';
 // flux-2 models expect multipart input; flux-1-schnell takes a plain prompt.
 export const DEFAULT_IMAGE_MODEL = '@cf/black-forest-labs/flux-1-schnell';
+
+// Files larger than this spill from DO SQLite to R2 (when a bucket is bound).
+export const SPILL_THRESHOLD = 5 * 1024 * 1024;
+// Hard per-file caps: SQLite chunking without R2, Workers request body limit with it.
+export const MAX_DO_FILE = 25 * 1024 * 1024;
+export const MAX_R2_FILE = 95 * 1024 * 1024;
+
+export const r2SiteKey = (site: string, hash: string) => `sites/${site}/${hash}`;
+export const r2UploadKey = (site: string, id: string) => `uploads/${site}/${id}`;
 
 export const DEFAULT_LIMITS: Record<string, number> = {
   db_write_ip: 5000,

@@ -15,6 +15,8 @@ export interface Config {
   platformUrl: string;
   token: string;
   domains: Domain[];
+  /** Shared R2 bucket for big-file spillover; null when R2 isn't enabled on the account. */
+  r2Bucket: string | null;
 }
 
 export const configDir = join(
@@ -28,6 +30,7 @@ export function loadConfig(): Config | null {
   try {
     const config = JSON.parse(readFileSync(configPath, 'utf8')) as Config;
     config.domains ??= [];
+    config.r2Bucket ??= null;
     return config;
   } catch {
     return null;
@@ -46,7 +49,7 @@ export function saveConfig(config: Config) {
 }
 
 /** The wrangler config the CLI generates for the user's platform worker. */
-export function wranglerConfig(workerName: string, domains: Domain[]) {
+export function wranglerConfig(workerName: string, domains: Domain[], r2Bucket: string | null) {
   const routes = domains.flatMap((d) => [
     { pattern: `${d.host}/*`, zone_name: d.zone },
     ...(d.wildcard ? [{ pattern: `*.${d.host}/*`, zone_name: d.zone }] : []),
@@ -64,6 +67,7 @@ export function wranglerConfig(workerName: string, domains: Domain[]) {
       PATH_HOSTS: domains.map((d) => d.host).join(','),
       WILDCARD_BASES: domains.filter((d) => d.wildcard).map((d) => d.host).join(','),
     },
+    ...(r2Bucket ? { r2_buckets: [{ binding: 'FILES', bucket_name: r2Bucket }] } : {}),
     ...(routes.length ? { routes } : {}),
   };
 }

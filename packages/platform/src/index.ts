@@ -1,6 +1,14 @@
 import { parseHostConfig, resolveTarget, isValidSiteName, type Target } from './routing';
 import { SiteDO, MAX_FILE_BYTES } from './site-do';
-import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, type Env } from './env';
+import {
+  DEFAULT_CHAT_MODEL,
+  DEFAULT_IMAGE_MODEL,
+  MAX_R2_FILE,
+  SPILL_THRESHOLD,
+  r2SiteKey,
+  r2UploadKey,
+  type Env,
+} from './env';
 import { SDK_SOURCE } from './generated/sdk';
 import { landingPage } from './landing';
 
@@ -77,7 +85,7 @@ async function handlePlatform(request: Request, env: Env, path: string, url: URL
     if (!body.site || !isValidSiteName(body.site)) return err(400, 'invalid site name');
     const res = await siteStub(env, body.site).fetch('https://do/deploy/start', {
       method: 'POST',
-      body: JSON.stringify({ manifest: body.manifest }),
+      body: JSON.stringify({ manifest: body.manifest, r2Available: !!env.FILES }),
     });
     return res;
   }
@@ -85,25 +93,53 @@ async function handlePlatform(request: Request, env: Env, path: string, url: URL
   if (path === '/__platform/deploy/file' && (request.method === 'PUT' || request.method === 'POST')) {
     const site = url.searchParams.get('site') ?? '';
     if (!isValidSiteName(site)) return err(400, 'invalid site name');
+    const hash = url.searchParams.get('hash') ?? '';
+    if (url.searchParams.get('storage') === 'r2') {
+      if (!env.FILES) return err(400, 'R2 is not configured on this platform');
+      await env.FILES.put(r2SiteKey(site, hash), request.body, {
+        httpMetadata: { contentType: url.searchParams.get('ct') || 'application/octet-stream' },
+      });
+      return json({ ok: true });
+    }
     const doUrl = `https://do/deploy/file?uploadId=${encodeURIComponent(
       url.searchParams.get('uploadId') ?? '',
-    )}&hash=${encodeURIComponent(url.searchParams.get('hash') ?? '')}`;
+    )}&hash=${encodeURIComponent(hash)}`;
     return siteStub(env, site).fetch(doUrl, { method: 'PUT', body: request.body });
   }
 
   if (path === '/__platform/deploy/commit' && request.method === 'POST') {
     const body = (await request.json()) as { site?: string; uploadId?: string };
     if (!body.site || !isValidSiteName(body.site)) return err(400, 'invalid site name');
-    const res = await siteStub(env, body.site).fetch('https://do/deploy/commit', {
+    const stub = siteStub(env, body.site);
+
+    // Confirm any R2-bound files actually landed before committing the manifest.
+    let r2Verified: string[] = [];
+    if (env.FILES) {
+      const pending = await stub.fetch(
+        `https://do/deploy/pending?uploadId=${encodeURIComponent(body.uploadId ?? '')}`,
+      );
+      if (!pending.ok) return pending;
+      const { r2 } = (await pending.json()) as { r2: string[] };
+      for (const hash of r2) {
+        if (await env.FILES.head(r2SiteKey(body.site, hash))) r2Verified.push(hash);
+      }
+    }
+
+    const res = await stub.fetch('https://do/deploy/commit', {
       method: 'POST',
-      body: JSON.stringify({ uploadId: body.uploadId }),
+      body: JSON.stringify({ uploadId: body.uploadId, r2Verified }),
     });
     if (!res.ok) return res;
-    const { files, bytes } = (await res.json()) as { files: number; bytes: number };
+    const { files, bytes, r2Hashes } = (await res.json()) as {
+      files: number;
+      bytes: number;
+      r2Hashes: string[];
+    };
     await siteStub(env, REGISTRY).fetch('https://do/registry/upsert', {
       method: 'POST',
       body: JSON.stringify({ site: body.site, files, bytes }),
     });
+    await gcR2Assets(env, body.site, new Set(r2Hashes));
     return json({ site: body.site, files, bytes, urls: siteUrls(env, body.site, url.host) });
   }
 
@@ -115,6 +151,8 @@ async function handlePlatform(request: Request, env: Env, path: string, url: URL
       method: 'POST',
       body: JSON.stringify({ site: body.site }),
     });
+    await deleteR2Prefix(env, `sites/${body.site}/`);
+    await deleteR2Prefix(env, `uploads/${body.site}/`);
     return json({ ok: true });
   }
 
@@ -137,6 +175,69 @@ function timingSafeEqual(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
   return diff === 0;
+}
+
+async function deleteR2Prefix(env: Env, prefix: string) {
+  if (!env.FILES) return;
+  let cursor: string | undefined;
+  do {
+    const listing = await env.FILES.list({ prefix, cursor, limit: 1000 });
+    if (listing.objects.length) await env.FILES.delete(listing.objects.map((o) => o.key));
+    cursor = listing.truncated ? listing.cursor : undefined;
+  } while (cursor);
+}
+
+/** Remove R2 objects for a site that the freshly committed manifest no longer references. */
+async function gcR2Assets(env: Env, site: string, liveHashes: Set<string>) {
+  if (!env.FILES) return;
+  let cursor: string | undefined;
+  do {
+    const listing = await env.FILES.list({ prefix: `sites/${site}/`, cursor, limit: 1000 });
+    const stale = listing.objects.filter((o) => !liveHashes.has(o.key.split('/').pop() ?? '')).map((o) => o.key);
+    if (stale.length) await env.FILES.delete(stale);
+    cursor = listing.truncated ? listing.cursor : undefined;
+  } while (cursor);
+}
+
+/** Stream an R2 object honoring a simple single-range request (video seeking etc.). */
+async function serveR2(
+  env: Env,
+  key: string,
+  request: Request,
+  baseHeaders: Record<string, string>,
+): Promise<Response> {
+  if (!env.FILES) return err(500, 'R2 is not configured on this platform');
+  const rangeHeader = request.headers.get('range');
+  const match = rangeHeader?.match(/^bytes=(\d*)-(\d*)$/);
+
+  if (match && (match[1] || match[2])) {
+    const head = await env.FILES.head(key);
+    if (!head) return err(404, 'file not found');
+    const size = head.size;
+    const start = match[1] ? Number(match[1]) : size - Number(match[2]);
+    const end = match[1] && match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+    if (start < 0 || start > end) {
+      return new Response(null, { status: 416, headers: { 'content-range': `bytes */${size}` } });
+    }
+    const obj = await env.FILES.get(key, { range: { offset: start, length: end - start + 1 } });
+    if (!obj) return err(404, 'file not found');
+    return new Response(obj.body, {
+      status: 206,
+      headers: {
+        ...baseHeaders,
+        'accept-ranges': 'bytes',
+        'content-range': `bytes ${start}-${end}/${size}`,
+        'content-length': String(end - start + 1),
+      },
+    });
+  }
+
+  const obj = await env.FILES.get(key);
+  if (!obj) return err(404, 'file not found');
+  return new Response(request.method === 'HEAD' ? null : obj.body, {
+    status: 200,
+    headers: { ...baseHeaders, 'accept-ranges': 'bytes', 'content-length': String(obj.size) },
+  });
 }
 
 function siteUrls(env: Env, site: string, requestHost: string): string[] {
@@ -173,8 +274,15 @@ async function handleSite(request: Request, env: Env, target: SiteTarget, url: U
     const id = sitePath.slice('/__files/'.length);
     const res = await siteStub(env, site).fetch(`https://do/upload/${id}`);
     if (!res.ok) return res;
+    const base = {
+      'content-type': res.headers.get('content-type') ?? 'application/octet-stream',
+      'cache-control': 'public, max-age=31536000, immutable',
+      'access-control-allow-origin': '*',
+    };
+    const r2Id = res.headers.get('x-oq-r2');
+    if (r2Id) return serveR2(env, r2UploadKey(site, r2Id), request, base);
     const headers = new Headers(res.headers);
-    headers.set('cache-control', 'public, max-age=31536000, immutable');
+    headers.set('cache-control', base['cache-control']);
     headers.set('access-control-allow-origin', '*');
     headers.delete('x-oq-immutable');
     return new Response(res.body, { status: res.status, headers });
@@ -184,6 +292,15 @@ async function handleSite(request: Request, env: Env, target: SiteTarget, url: U
   const res = await siteStub(env, site).fetch(
     forward(request, `/asset?path=${encodeURIComponent(sitePath)}`, {}),
   );
+  const r2Hash = res.headers.get('x-oq-r2');
+  if (res.ok && r2Hash) {
+    return serveR2(env, r2SiteKey(site, r2Hash), request, {
+      'content-type': res.headers.get('content-type') ?? 'application/octet-stream',
+      etag: res.headers.get('etag') ?? '',
+      'cache-control': 'no-cache',
+      'access-control-allow-origin': '*',
+    });
+  }
   const headers = new Headers(res.headers);
   headers.set('cache-control', 'no-cache');
   headers.set('access-control-allow-origin', '*');
@@ -223,6 +340,33 @@ async function handleApi(request: Request, env: Env, target: SiteTarget, url: UR
 
   if (api === '/files' && request.method === 'POST') {
     const name = url.searchParams.get('name') ?? 'file';
+    const length = Number(request.headers.get('content-length') || 0);
+
+    // Big uploads stream straight to R2; the DO only records the metadata.
+    if (env.FILES && length > SPILL_THRESHOLD) {
+      if (length > MAX_R2_FILE) return err(400, `file too large (max ${MAX_R2_FILE} bytes)`, cors);
+      const id = crypto.randomUUID();
+      const ct = request.headers.get('content-type') || 'application/octet-stream';
+      await env.FILES.put(r2UploadKey(site, id), request.body, { httpMetadata: { contentType: ct } });
+      const res = await siteStub(env, site).fetch('https://do/upload/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          id,
+          name,
+          ct,
+          size: length,
+          ip: request.headers.get('cf-connecting-ip') ?? 'unknown',
+        }),
+      });
+      if (!res.ok) {
+        await env.FILES.delete(r2UploadKey(site, id));
+        return withCors(res, cors);
+      }
+      const meta = (await res.json()) as { id: string; name: string; size: number; type: string };
+      const fileUrl = `${target.base}/__files/${meta.id}/${encodeURIComponent(meta.name)}`;
+      return json({ ...meta, url: fileUrl }, 201, cors);
+    }
+
     const res = await siteStub(env, site).fetch(
       forward(request, `/upload?name=${encodeURIComponent(name)}`, {}),
     );

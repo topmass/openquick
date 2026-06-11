@@ -12,7 +12,7 @@ function bundledPlatformDir(): string {
   return join(__dirname, '..', 'platform');
 }
 
-export function writePlatform(workerName: string, domains: Config['domains']) {
+export function writePlatform(config: Config) {
   const src = bundledPlatformDir();
   if (!existsSync(join(src, 'worker.js'))) {
     fail(`bundled platform worker missing at ${src} – reinstall openquick`);
@@ -22,12 +22,32 @@ export function writePlatform(workerName: string, domains: Config['domains']) {
   cpSync(join(src, 'worker.js'), join(platformDir, 'worker.js'));
   writeFileSync(
     join(platformDir, 'wrangler.json'),
-    JSON.stringify(wranglerConfig(workerName, domains), null, 2) + '\n',
+    JSON.stringify(wranglerConfig(config.workerName, config.domains, config.r2Bucket), null, 2) + '\n',
   );
 }
 
+/**
+ * Ensure the shared spillover bucket exists. Returns its name, or null when R2
+ * isn't enabled on the account (sites then keep the 25 MB per-file cap).
+ */
+async function ensureBucket(workerName: string, accountId: string): Promise<string | null> {
+  const bucket = `${workerName}-files`;
+  const { code, output } = await runWrangler(['r2', 'bucket', 'create', bucket], {
+    accountId,
+    quiet: true,
+  });
+  if (code === 0 || /already (exists|owned)/i.test(output)) return bucket;
+  console.log(
+    `${yellow('!')} R2 is not available on this account (enable it once at ${cyan(
+      'https://dash.cloudflare.com → R2',
+    )}, then re-run ${bold('oquick setup')}).`,
+  );
+  console.log(`  Sites still work – files are just capped at 25 MB each until then.\n`);
+  return null;
+}
+
 export async function deployPlatform(config: Config): Promise<string> {
-  writePlatform(config.workerName, config.domains);
+  writePlatform(config);
   const { code, output } = await runWrangler(['deploy'], {
     cwd: platformDir,
     accountId: config.accountId,
@@ -84,8 +104,10 @@ export async function setup(flags: Record<string, string | boolean>) {
     platformUrl: existing?.platformUrl ?? '',
     token: existing?.token ?? randomBytes(32).toString('hex'),
     domains: existing?.domains ?? [],
+    r2Bucket: existing?.r2Bucket ?? null,
   };
 
+  config.r2Bucket = config.r2Bucket ?? (await ensureBucket(workerName, accountId));
   config.platformUrl = await deployPlatform(config);
 
   const secret = await runWrangler(['secret', 'put', 'DEPLOY_TOKEN', '--name', workerName], {

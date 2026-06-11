@@ -12,7 +12,8 @@ Backend functionality (database, realtime, files, AI) comes from the zero-config
   served under a path prefix, so absolute paths break.
 - `index.html` is the entry point. `404.html` (optional) is served for missing paths.
 - No server-side code. Everything runs in the browser; `quick.js` is the backend.
-- Files must be under 25 MB each. Don't commit `node_modules`; there is no npm here.
+- Files up to 95 MB each (25 MB if the platform has no R2 bucket; big files spill to R2
+  automatically – no configuration needed). Don't commit `node_modules`; there is no npm here.
 - Anyone with the URL can read this site and write to its database. Don't store secrets.
 
 ## The quick.js API

@@ -4,7 +4,8 @@ import { basename, join, relative, resolve } from 'node:path';
 import { requireConfig, type Config } from './config';
 import { bold, contentType, cyan, dim, fail, formatBytes, green, slugify, validSiteName } from './util';
 
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_DO_FILE = 25 * 1024 * 1024;
+const MAX_R2_FILE = 95 * 1024 * 1024;
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.wrangler']);
 
 interface ManifestEntry {
@@ -33,20 +34,24 @@ export function resolveSiteName(dir: string, flagName: string | undefined): stri
   return name;
 }
 
-function walk(dir: string, root: string, exclude: string[], out: ManifestEntry[]) {
+function walk(dir: string, root: string, exclude: string[], maxFile: number, out: ManifestEntry[]) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name.startsWith('.') || entry.name === 'oquick.json') continue;
     const abs = join(dir, entry.name);
     const rel = relative(root, abs).split('\\').join('/');
     if (exclude.some((p) => rel === p || rel.startsWith(`${p}/`))) continue;
     if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) walk(abs, root, exclude, out);
+      if (!SKIP_DIRS.has(entry.name)) walk(abs, root, exclude, maxFile, out);
       continue;
     }
     if (!entry.isFile()) continue;
     const size = statSync(abs).size;
-    if (size > MAX_FILE_BYTES) {
-      fail(`${rel} is ${formatBytes(size)} – the max file size is ${formatBytes(MAX_FILE_BYTES)}`);
+    if (size > maxFile) {
+      const hint =
+        maxFile === MAX_DO_FILE
+          ? ' (enable R2 on the Cloudflare account and re-run oquick setup for files up to 95 MB)'
+          : '';
+      fail(`${rel} is ${formatBytes(size)} – the max file size is ${formatBytes(maxFile)}${hint}`);
     }
     const hash = createHash('sha256').update(readFileSync(abs)).digest('hex');
     out.push({ path: rel, hash, size, ct: contentType(rel), abs });
@@ -79,22 +84,21 @@ export async function deploy(dirArg: string | undefined, flags: Record<string, s
   const site = resolveSiteName(dir, typeof flags.name === 'string' ? flags.name : undefined);
 
   const manifest: ManifestEntry[] = [];
-  walk(dir, dir, siteConfig.exclude ?? [], manifest);
+  walk(dir, dir, siteConfig.exclude ?? [], config.r2Bucket ? MAX_R2_FILE : MAX_DO_FILE, manifest);
   if (!manifest.length) fail(`no files found in ${dir}`);
   const totalBytes = manifest.reduce((a, f) => a + f.size, 0);
   console.log(
     `Deploying ${bold(site)} ${dim(`(${manifest.length} files, ${formatBytes(totalBytes)})`)}…`,
   );
 
-  const start = await api<{ uploadId: string; needed: { path: string; hash: string }[] }>(
-    config,
-    '/__platform/deploy/start',
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ site, manifest: manifest.map(({ abs: _abs, ...m }) => m) }),
-    },
-  );
+  const start = await api<{
+    uploadId: string;
+    needed: { path: string; hash: string; storage?: string; ct?: string }[];
+  }>(config, '/__platform/deploy/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ site, manifest: manifest.map(({ abs: _abs, ...m }) => m) }),
+  });
 
   const byPath = new Map(manifest.map((m) => [m.path, m]));
   const queue = [...start.needed];
@@ -105,12 +109,17 @@ export async function deploy(dirArg: string | undefined, flags: Record<string, s
       const file = byPath.get(item.path);
       if (!file) fail(`server requested unknown path ${item.path}`);
       const params = new URLSearchParams({ site, uploadId: start.uploadId, hash: item.hash });
+      if (item.storage === 'r2') {
+        params.set('storage', 'r2');
+        params.set('ct', file.ct);
+      }
       await api(config, `/__platform/deploy/file?${params}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/octet-stream' },
         body: new Uint8Array(readFileSync(file.abs)),
       });
-      console.log(`  ${green('↑')} ${item.path} ${dim(formatBytes(file.size))}`);
+      const note = item.storage === 'r2' ? ' → R2' : '';
+      console.log(`  ${green('↑')} ${item.path} ${dim(formatBytes(file.size) + note)}`);
     }
   });
   await Promise.all(workers);

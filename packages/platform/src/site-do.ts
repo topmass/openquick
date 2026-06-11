@@ -1,9 +1,9 @@
 import { DurableObject } from 'cloudflare:workers';
 import { assetCandidates } from './routing';
-import { limitsFromEnv, type Env } from './env';
+import { limitsFromEnv, MAX_DO_FILE, MAX_R2_FILE, SPILL_THRESHOLD, type Env } from './env';
 
 const CHUNK_SIZE = 1_500_000; // well under the 2 MB SQLite per-value limit
-export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+export const MAX_FILE_BYTES = MAX_DO_FILE;
 const DEFAULT_SITE_QUOTA = 1024 * 1024 * 1024; // 1 GiB
 const MAX_FILES_PER_SITE = 2000;
 const STAGED_TTL_MS = 60 * 60 * 1000;
@@ -17,6 +17,7 @@ interface ManifestEntry {
   hash: string;
   size: number;
   ct: string;
+  storage?: 'do' | 'r2';
 }
 
 interface Attachment {
@@ -45,16 +46,24 @@ export class SiteDO extends DurableObject<Env> {
   private initSchema() {
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
-      CREATE TABLE IF NOT EXISTS assets(path TEXT PRIMARY KEY, hash TEXT NOT NULL, size INTEGER NOT NULL, content_type TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS assets(path TEXT PRIMARY KEY, hash TEXT NOT NULL, size INTEGER NOT NULL, content_type TEXT NOT NULL, storage TEXT NOT NULL DEFAULT 'do');
       CREATE TABLE IF NOT EXISTS asset_chunks(hash TEXT NOT NULL, idx INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(hash, idx));
       CREATE TABLE IF NOT EXISTS staged_manifest(upload_id TEXT PRIMARY KEY, manifest TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS staged_chunks(upload_id TEXT NOT NULL, hash TEXT NOT NULL, idx INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(upload_id, hash, idx));
       CREATE TABLE IF NOT EXISTS documents(collection TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(collection, id));
-      CREATE TABLE IF NOT EXISTS uploads(id TEXT PRIMARY KEY, name TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS uploads(id TEXT PRIMARY KEY, name TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, created_at INTEGER NOT NULL, storage TEXT NOT NULL DEFAULT 'do');
       CREATE TABLE IF NOT EXISTS upload_chunks(id TEXT NOT NULL, idx INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(id, idx));
       CREATE TABLE IF NOT EXISTS counters(key TEXT PRIMARY KEY, day TEXT NOT NULL, count INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS sites(name TEXT PRIMARY KEY, bytes INTEGER NOT NULL, files INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
     `);
+    // Older deployments created these tables without the storage column.
+    for (const table of ['assets', 'uploads']) {
+      try {
+        this.sql.exec(`ALTER TABLE ${table} ADD COLUMN storage TEXT NOT NULL DEFAULT 'do'`);
+      } catch {
+        /* column already exists */
+      }
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -67,7 +76,9 @@ export class SiteDO extends DurableObject<Env> {
       if (path === '/asset') return this.handleAsset(request, url);
       if (path === '/deploy/start' && method === 'POST') return this.deployStart(request);
       if (path === '/deploy/file' && method === 'PUT') return this.deployFile(request, url);
+      if (path === '/deploy/pending') return this.deployPending(url);
       if (path === '/deploy/commit' && method === 'POST') return this.deployCommit(request);
+      if (path === '/upload/register' && method === 'POST') return this.registerUpload(request);
       if (path === '/destroy' && method === 'POST') return this.destroy();
       if (path === '/usage') return this.usage();
       if (path.startsWith('/db/')) return this.handleDb(request, url);
@@ -91,11 +102,20 @@ export class SiteDO extends DurableObject<Env> {
 
     for (const key of assetCandidates(sitePath)) {
       const row = this.sql
-        .exec('SELECT hash, size, content_type FROM assets WHERE path = ?', key)
-        .toArray()[0] as { hash: string; size: number; content_type: string } | undefined;
+        .exec('SELECT hash, size, content_type, storage FROM assets WHERE path = ?', key)
+        .toArray()[0] as
+        | { hash: string; size: number; content_type: string; storage: string }
+        | undefined;
       if (!row) continue;
       const etag = `"${row.hash}"`;
       if (inm === etag) return new Response(null, { status: 304, headers: { etag } });
+      if (row.storage === 'r2') {
+        // Body lives in the shared bucket – hand the worker a marker to stream it.
+        return new Response(null, {
+          status: 200,
+          headers: { 'content-type': row.content_type, etag, 'x-oq-r2': row.hash },
+        });
+      }
       return new Response(this.readChunks('asset_chunks', 'hash', row.hash, row.size), {
         status: 200,
         headers: { 'content-type': row.content_type, etag },
@@ -145,8 +165,9 @@ export class SiteDO extends DurableObject<Env> {
   // ---------- deploys ----------
 
   private async deployStart(request: Request): Promise<Response> {
-    const body = (await request.json()) as { manifest: ManifestEntry[] };
+    const body = (await request.json()) as { manifest: ManifestEntry[]; r2Available?: boolean };
     const manifest = body.manifest;
+    const r2 = !!body.r2Available;
     if (!Array.isArray(manifest)) return err(400, 'manifest required');
     if (manifest.length > MAX_FILES_PER_SITE) return err(400, `too many files (max ${MAX_FILES_PER_SITE})`);
 
@@ -156,9 +177,17 @@ export class SiteDO extends DurableObject<Env> {
         return err(400, `bad path: ${f.path}`);
       }
       if (!/^[0-9a-f]{64}$/.test(f.hash)) return err(400, `bad hash for ${f.path}`);
-      if (!Number.isInteger(f.size) || f.size < 0 || f.size > MAX_FILE_BYTES) {
-        return err(400, `file too large: ${f.path} (max ${MAX_FILE_BYTES} bytes)`);
+      if (!Number.isInteger(f.size) || f.size < 0) return err(400, `bad size for ${f.path}`);
+      const max = r2 ? MAX_R2_FILE : MAX_DO_FILE;
+      if (f.size > max) {
+        return err(
+          400,
+          r2
+            ? `file too large: ${f.path} (max ${MAX_R2_FILE} bytes)`
+            : `file too large: ${f.path} (max ${MAX_DO_FILE} bytes without R2 – enable R2 on the Cloudflare account and re-run oquick setup for files up to ${MAX_R2_FILE} bytes)`,
+        );
       }
+      f.storage = r2 && f.size > SPILL_THRESHOLD ? 'r2' : 'do';
       total += f.size;
     }
     const quota = Number(this.env.SITE_QUOTA_BYTES) || DEFAULT_SITE_QUOTA;
@@ -169,10 +198,8 @@ export class SiteDO extends DurableObject<Env> {
       'DELETE FROM staged_chunks WHERE upload_id NOT IN (SELECT upload_id FROM staged_manifest)',
     );
 
-    const have = new Set(
-      this.sql.exec('SELECT DISTINCT hash FROM assets').toArray().map((r) => r.hash as string),
-    );
-    const needed = manifest.filter((f) => !have.has(f.hash) && f.size > 0);
+    const have = this.existingAssetKeys();
+    const needed = manifest.filter((f) => !have.has(`${f.storage}:${f.hash}`) && f.size > 0);
 
     const uploadId = crypto.randomUUID();
     this.sql.exec(
@@ -181,7 +208,32 @@ export class SiteDO extends DurableObject<Env> {
       JSON.stringify(manifest),
       Date.now(),
     );
-    return json({ uploadId, needed: needed.map((f) => ({ path: f.path, hash: f.hash })) });
+    return json({
+      uploadId,
+      needed: needed.map((f) => ({ path: f.path, hash: f.hash, storage: f.storage, ct: f.ct })),
+    });
+  }
+
+  /** Set of "storage:hash" pairs already present in the live asset table. */
+  private existingAssetKeys(): Set<string> {
+    return new Set(
+      this.sql
+        .exec('SELECT DISTINCT storage, hash FROM assets')
+        .toArray()
+        .map((r) => `${r.storage}:${r.hash}`),
+    );
+  }
+
+  private deployPending(url: URL): Response {
+    const uploadId = url.searchParams.get('uploadId') ?? '';
+    const row = this.sql
+      .exec('SELECT manifest FROM staged_manifest WHERE upload_id = ?', uploadId)
+      .toArray()[0];
+    if (!row) return err(404, 'unknown uploadId');
+    const manifest = JSON.parse(row.manifest as string) as ManifestEntry[];
+    const have = this.existingAssetKeys();
+    const r2New = manifest.filter((f) => f.storage === 'r2' && !have.has(`r2:${f.hash}`));
+    return json({ r2: [...new Set(r2New.map((f) => f.hash))] });
   }
 
   private async deployFile(request: Request, url: URL): Promise<Response> {
@@ -200,23 +252,28 @@ export class SiteDO extends DurableObject<Env> {
   }
 
   private async deployCommit(request: Request): Promise<Response> {
-    const { uploadId } = (await request.json()) as { uploadId: string };
+    const { uploadId, r2Verified = [] } = (await request.json()) as {
+      uploadId: string;
+      r2Verified?: string[];
+    };
     const row = this.sql
       .exec('SELECT manifest FROM staged_manifest WHERE upload_id = ?', uploadId)
       .toArray()[0];
     if (!row) return err(404, 'unknown uploadId');
     const manifest = JSON.parse(row.manifest as string) as ManifestEntry[];
 
-    const have = new Set(
-      this.sql.exec('SELECT DISTINCT hash FROM assets').toArray().map((r) => r.hash as string),
-    );
+    const have = this.existingAssetKeys();
     const staged = new Set(
       this.sql
         .exec('SELECT DISTINCT hash FROM staged_chunks WHERE upload_id = ?', uploadId)
         .toArray()
         .map((r) => r.hash as string),
     );
-    const missing = manifest.filter((f) => f.size > 0 && !have.has(f.hash) && !staged.has(f.hash));
+    const verified = new Set(r2Verified);
+    const missing = manifest.filter((f) => {
+      if (f.size === 0 || have.has(`${f.storage}:${f.hash}`)) return false;
+      return f.storage === 'r2' ? !verified.has(f.hash) : !staged.has(f.hash);
+    });
     if (missing.length) {
       return err(400, `missing uploads: ${missing.map((f) => f.path).join(', ')}`);
     }
@@ -224,7 +281,14 @@ export class SiteDO extends DurableObject<Env> {
     this.ctx.storage.transactionSync(() => {
       this.sql.exec('DELETE FROM assets');
       for (const f of manifest) {
-        this.sql.exec('INSERT OR REPLACE INTO assets VALUES (?, ?, ?, ?)', f.path, f.hash, f.size, f.ct);
+        this.sql.exec(
+          'INSERT OR REPLACE INTO assets (path, hash, size, content_type, storage) VALUES (?, ?, ?, ?, ?)',
+          f.path,
+          f.hash,
+          f.size,
+          f.ct,
+          f.storage ?? 'do',
+        );
         if (f.size === 0) {
           this.sql.exec('INSERT OR REPLACE INTO asset_chunks VALUES (?, 0, ?)', f.hash, new ArrayBuffer(0));
         }
@@ -233,7 +297,9 @@ export class SiteDO extends DurableObject<Env> {
         `INSERT OR IGNORE INTO asset_chunks SELECT hash, idx, data FROM staged_chunks WHERE upload_id = ?`,
         uploadId,
       );
-      this.sql.exec('DELETE FROM asset_chunks WHERE hash NOT IN (SELECT DISTINCT hash FROM assets)');
+      this.sql.exec(
+        "DELETE FROM asset_chunks WHERE hash NOT IN (SELECT DISTINCT hash FROM assets WHERE storage = 'do')",
+      );
       this.sql.exec('DELETE FROM staged_chunks WHERE upload_id = ?', uploadId);
       this.sql.exec('DELETE FROM staged_manifest WHERE upload_id = ?', uploadId);
       this.sql.exec(
@@ -243,7 +309,8 @@ export class SiteDO extends DurableObject<Env> {
     });
 
     const bytes = manifest.reduce((a, f) => a + f.size, 0);
-    return json({ files: manifest.length, bytes });
+    const r2Hashes = [...new Set(manifest.filter((f) => f.storage === 'r2').map((f) => f.hash))];
+    return json({ files: manifest.length, bytes, r2Hashes });
   }
 
   private async destroy(): Promise<Response> {
@@ -410,17 +477,54 @@ export class SiteDO extends DurableObject<Env> {
     if (bytes.length === 0) return err(400, 'empty file');
     if (bytes.length > MAX_FILE_BYTES) return err(400, `file too large (max ${MAX_FILE_BYTES} bytes)`);
     const id = crypto.randomUUID();
-    this.sql.exec('INSERT INTO uploads VALUES (?, ?, ?, ?, ?)', id, name, ct, bytes.length, Date.now());
+    this.sql.exec(
+      "INSERT INTO uploads (id, name, content_type, size, created_at, storage) VALUES (?, ?, ?, ?, ?, 'do')",
+      id,
+      name,
+      ct,
+      bytes.length,
+      Date.now(),
+    );
     this.writeChunks('upload_chunks', [id], bytes);
     return json({ id, name, size: bytes.length, type: ct }, 201);
   }
 
+  /** Records metadata for an upload whose body the worker streamed to R2. */
+  private async registerUpload(request: Request): Promise<Response> {
+    const { id, name, ct, size, ip } = (await request.json()) as {
+      id: string;
+      name: string;
+      ct: string;
+      size: number;
+      ip: string;
+    };
+    if (!(await this.allow('upload', ip))) return err(429, 'daily upload limit reached');
+    this.sql.exec(
+      "INSERT INTO uploads (id, name, content_type, size, created_at, storage) VALUES (?, ?, ?, ?, ?, 'r2')",
+      id,
+      name.slice(0, 128).replace(/[/\\]/g, '_'),
+      ct,
+      size,
+      Date.now(),
+    );
+    return json({ id, name, size, type: ct }, 201);
+  }
+
   private serveUpload(id: string): Response {
+    const uploadId = id.split('/')[0];
     const row = this.sql
-      .exec('SELECT name, content_type, size FROM uploads WHERE id = ?', id.split('/')[0])
-      .toArray()[0] as { name: string; content_type: string; size: number } | undefined;
+      .exec('SELECT name, content_type, size, storage FROM uploads WHERE id = ?', uploadId)
+      .toArray()[0] as
+      | { name: string; content_type: string; size: number; storage: string }
+      | undefined;
     if (!row) return err(404, 'not found');
-    return new Response(this.readChunks('upload_chunks', 'id', id.split('/')[0], row.size), {
+    if (row.storage === 'r2') {
+      return new Response(null, {
+        status: 200,
+        headers: { 'content-type': row.content_type, 'x-oq-r2': uploadId, 'x-oq-immutable': '1' },
+      });
+    }
+    return new Response(this.readChunks('upload_chunks', 'id', uploadId, row.size), {
       headers: { 'content-type': row.content_type, 'x-oq-immutable': '1' },
     });
   }

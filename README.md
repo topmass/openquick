@@ -59,14 +59,14 @@ out of the box – same trick as Quick's `quick init`.
 ## How it works
 
 Shopify's Quick is NGINX + a GCS bucket + one small API server + one database. OpenQuick is the
-same idea translated to Cloudflare primitives – chosen so that **everything fits in the default
-wrangler OAuth scopes** (no R2, no DNS writes needed):
+same idea translated to Cloudflare primitives, needing nothing beyond a normal `wrangler login`:
 
 | Quick (Shopify)                | OpenQuick (your Cloudflare account)            |
 | ------------------------------ | ---------------------------------------------- |
 | NGINX + GCS bucket + gcsfuse   | one Worker serving assets from SQLite          |
 | small node/Go API server       | the same Worker, `/__api/*`                    |
 | CloudSQL "big JSON store"      | one **Durable Object per site** (SQLite)       |
+| big files in the bucket        | shared R2 bucket, folder per site (automatic)  |
 | websockets                     | the same DO, hibernating WebSockets            |
 | AI proxy, keys on the server   | Workers AI binding                             |
 | IAP identity                   | anonymous ids, or Cloudflare Access (optional) |
@@ -76,6 +76,13 @@ wrangler OAuth scopes** (no R2, no DNS writes needed):
 Each site is one Durable Object: its files, documents, uploads and live websocket connections
 all live together – "namespace per site", exactly like Quick's data model. Deploys are atomic
 (a manifest swap in one transaction) and diffed (unchanged files never re-upload).
+
+**Big files spill to R2 automatically.** Files over 5 MB skip SQLite and land in a shared R2
+bucket under the site's folder (`sites/<site>/…`) – Shopify's exact bucket-of-folders layout –
+raising the per-file cap from 25 MB to ~95 MB with zero configuration. Setup creates the bucket
+if the account has R2 enabled (free 10 GB tier, one-time enable in the dashboard); without it,
+everything still works with the 25 MB cap. `oquick delete` removes the site's R2 folder along
+with its Durable Object.
 
 ## URL modes
 
@@ -118,7 +125,8 @@ OpenQuick is on the public internet, so the defaults differ:
 ## Limits (Cloudflare free plan)
 
 - 100k requests/day to the worker and 100k DO requests/day (an asset hit costs one of each)
-- 5 GB total storage across all sites; 25 MB max per file; 256 KB per document
+- 5 GB total DO storage across all sites + 10 GB free R2; 95 MB max per file (25 MB without R2);
+  256 KB per document
 - Workers AI free allocation: 10k neurons/day
 - All caps reset daily; `$5/mo Workers Paid` raises them to 10M+ requests and unlimited storage
 
