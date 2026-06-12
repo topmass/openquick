@@ -23,15 +23,26 @@ wrangler (bundled) and opens the browser login if needed. The defaults give you:
 - public sites (anyone with a URL can view), **token-gated deploys** (only you can publish)
 - AI, database, realtime and file APIs on every site, rate-limited inside the free tier
 
-Tune the install with flags, at setup time or any time later (re-running is safe):
+### Setup flags
+
+Tune the install at setup time – or any time later, re-running `oquick setup` is always safe:
+
+| flag                        | what it does                                                                 |
+| --------------------------- | ---------------------------------------------------------------------------- |
+| `--no-hub` / `--hub`        | turn the hub page (drag & drop deploys at the root URL) off / back on        |
+| `--private` / `--public`    | **org mode**: require Cloudflare Access logins for everything (see below)    |
+| `--open-deploys` / `--token-deploys` | **playground mode**: anyone may deploy sites, no token (delete keeps it) |
+| `--chat-model <@cf/…>`      | quick-wide default chat model (or pick from a list later: `oquick models`)   |
+| `--image-model <@cf/…>`     | quick-wide default image model                                               |
+| `--limits '<json>'`         | override rate limits – AI caps, deploy caps, site ceiling, storage quota     |
+| `--worker-name <name>`      | the worker / workers.dev URL prefix (default `openquick`)                    |
+
+And the everyday mode switches, no setup re-run needed:
 
 ```sh
-oquick setup --no-hub        # no hub page – sites only ("--hub" brings it back)
-oquick setup --private       # org mode: require Cloudflare Access logins for EVERYTHING
-                             # (guided one-time setup: oquick auth enable)
-oquick token open            # playground mode: ANYONE may deploy sites from the hub,
-                             # no token (delete keeps the token; per-IP daily caps apply)
-oquick models                # pick different default AI models from a list
+oquick token open            # playground mode on   (oquick token require = off)
+oquick auth enable           # org mode, guided     (oquick auth disable = off)
+oquick models                # pick default AI models from a curated list
 oquick domain add quick.you.com   # pretty URLs on your own domain
 ```
 

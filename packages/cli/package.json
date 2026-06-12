@@ -1,6 +1,6 @@
 {
   "name": "openquick",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Self-hosted Shopify-Quick-style instant sites on your own Cloudflare account: folder in, URL out, with a zero-config database, realtime, files and AI API.",
   "license": "MIT",
   "repository": {
