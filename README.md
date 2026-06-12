@@ -97,7 +97,7 @@ same idea translated to Cloudflare primitives, needing nothing beyond a normal `
 | AI proxy, keys on the server   | Workers AI binding                             |
 | IAP identity                   | anonymous ids, or Cloudflare Access (optional) |
 | `quick deploy` (rsync wrapper) | `oquick deploy` (hash-diff upload, FTP feel)   |
-| $200/month VM                  | $0 (free tier) / $5 Workers Paid               |
+| $5–$200/mo VPS + separate AI bills | $0 (free tier) / $5 Workers Paid – AI included |
 
 Each site is one Durable Object: its files, documents, uploads and live websocket connections
 all live together – "namespace per site", exactly like Quick's data model. Deploys are atomic
